@@ -12,6 +12,7 @@ import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Textarea } from '../ui/textarea'
+import { ConfirmDialog } from '../ui/confirm-dialog'
 import { useStore } from '../../stores/appStore'
 
 const VARIABLE_POOL = [
@@ -138,6 +139,8 @@ export default function EmailTemplates(): JSX.Element {
   })
   const [copied, setCopied] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [templateIdToDelete, setTemplateIdToDelete] = useState<string | null>(null)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const initRef = useRef(false)
@@ -269,11 +272,18 @@ export default function EmailTemplates(): JSX.Element {
     }
   }
 
-  const handleDeleteTemplate = async (templateId: string): Promise<void> => {
-    if (!confirm('确定删除此模板？')) return
+  const handleDeleteTemplate = async (): Promise<void> => {
+    const templateId = templateIdToDelete
+    if (!templateId) return
     await deleteEmailTemplate(templateId)
     await loadEmailTemplates()
     if (selectedTemplate?.id === templateId) setSelectedTemplate(null)
+    setTemplateIdToDelete(null)
+  }
+
+  const confirmDeleteTemplate = (templateId: string): void => {
+    setTemplateIdToDelete(templateId)
+    setDeleteConfirmOpen(true)
   }
 
   return (
@@ -330,7 +340,7 @@ export default function EmailTemplates(): JSX.Element {
                     <span className="truncate font-medium">{template.name}</span>
                   </div>
                   <button className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all flex-shrink-0 p-0.5"
-                    onClick={e => { e.stopPropagation(); handleDeleteTemplate(template.id) }}>
+                    onClick={e => { e.stopPropagation(); confirmDeleteTemplate(template.id) }}>
                     <Trash2 className="h-3 w-3" />
                   </button>
                 </div>
@@ -499,6 +509,16 @@ export default function EmailTemplates(): JSX.Element {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="删除模板"
+        description="确定要删除此模板吗？此操作不可恢复。"
+        confirmText="删除"
+        variant="destructive"
+        onConfirm={handleDeleteTemplate}
+      />
     </div>
   )
 }

@@ -40,6 +40,8 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
   const [showInterviewForm, setShowInterviewForm] = useState(false)
   const [showEditForm, setShowEditForm] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showTaskDeleteConfirm, setShowTaskDeleteConfirm] = useState(false)
+  const [taskIdToDelete, setTaskIdToDelete] = useState<string | null>(null)
   const [selectedAdvisor, setSelectedAdvisor] = useState<Advisor | null>(null)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [activeTab, setActiveTab] = useState('overview')
@@ -74,7 +76,13 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
   }
 
   const handleToggleTask = async (task: Task): Promise<void> => {
-    await updateTask(task.id, { ...task, isCompleted: !task.isCompleted })
+    await updateTask(task.id, { isCompleted: !task.isCompleted })
+  }
+
+  const handleDeleteTask = async (): Promise<void> => {
+    if (!taskIdToDelete) return
+    await deleteTask(taskIdToDelete)
+    setTaskIdToDelete(null)
   }
 
   const policyTags = parsePolicyTags(institution.policyTags)
@@ -101,6 +109,15 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
         confirmText="删除"
         variant="destructive"
         onConfirm={handleDelete}
+      />
+      <ConfirmDialog
+        open={showTaskDeleteConfirm}
+        onOpenChange={setShowTaskDeleteConfirm}
+        title="删除任务"
+        description="确定要删除此任务吗？此操作不可恢复。"
+        confirmText="删除"
+        variant="destructive"
+        onConfirm={handleDeleteTask}
       />
       <header className="p-4 border-b border-border bg-card">
         <div className="flex items-center gap-4">
@@ -154,7 +171,7 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
                   <span className="text-muted-foreground">学位类型：</span>
                   <span className="font-medium">{degreeTypeLabels[institution.degreeType]}</span>
                 </div>
-                {institution.expectedQuota && (
+                {institution.expectedQuota != null && (
                   <div className="flex items-center gap-2 text-sm">
                     <span className="text-muted-foreground">预计招生：</span>
                     <span className="font-medium">{institution.expectedQuota} 人</span>
@@ -233,7 +250,7 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
                               {Object.entries(advisorStatusConfig).map(([key, config]) => (
                                 <DropdownMenuItem
                                   key={key}
-                                  onSelect={() => { updateAdvisor(advisor.id, { contactStatus: key as Advisor['contactStatus'] }) }}
+                                  onSelect={() => { void (async () => { try { await updateAdvisor(advisor.id, { contactStatus: key as Advisor['contactStatus'] }) } catch { /* error already set in store */ } })() }}
                                   className="flex items-center gap-2 cursor-pointer"
                                 >
                                   <span className={`w-2 h-2 rounded-full flex-shrink-0 ${config.dot}`} />
@@ -325,7 +342,7 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
                       <p className="text-xs text-muted-foreground">截止：{formatDateSafe(task.dueDate, 'yyyy/MM/dd')}</p>
                     </div>
                     <Button variant="ghost" size="icon" onClick={() => { setSelectedTask(task); setShowTaskForm(true) }}><Edit2 className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" onClick={() => { if (confirm('确定删除此任务？')) deleteTask(task.id) }}><Trash2 className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => { setTaskIdToDelete(task.id); setShowTaskDeleteConfirm(true) }}><Trash2 className="h-4 w-4" /></Button>
                   </div>
                 ))}
               </div>
@@ -372,7 +389,7 @@ function AdvisorCard({ advisor, onEdit, onAddInterview, updateAdvisor, addAsset 
   }
 
   const handleStatusChange = async (status: string): Promise<void> => {
-    await updateAdvisor(advisor.id, { contactStatus: status as Advisor['contactStatus'] })
+    try { await updateAdvisor(advisor.id, { contactStatus: status as Advisor['contactStatus'] }) } catch { /* error already set in store */ }
   }
 
   const currentStatus = advisorStatusConfig[advisor.contactStatus] ?? advisorStatusConfig.PENDING

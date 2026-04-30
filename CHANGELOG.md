@@ -4,6 +4,31 @@
 
 ---
 
+## [v2.4.1] - 2026-04-30
+
+### 问题修复
+
+#### 数据库初始化崩溃
+- 新增 `createDatabaseSchema()` 函数，当种子数据库 `prisma/dev.db` 缺失时自动从 SQL DDL 创建全部 7 张表
+- 修复打包后因 `.gitignore` 忽略种子库导致 `Seed database not found` 启动崩溃
+
+#### 数据操作
+- 修复 `handleToggleTask` 展开整个 task 对象发送给后端的错误，改为仅发送 `isCompleted` 字段
+- 修复 `updateAdvisor` 调用缺少错误处理导致未捕获 Promise rejection
+
+#### UI 渲染
+- 修复 `expectedQuota` 为 0 时错误渲染为文本 "0" 的问题（`&&` → `!= null`）
+- 修复日期天数计算未归一化到零点导致 `differenceInDays` / `isPast` 时区偏差
+- 修复 `reputationScore` 使用 `||` 而非 `??` 导致 0 值被错误判空
+
+#### 交互一致性
+- 统一任务删除和邮件模板删除为 `ConfirmDialog` 二次确认，替换原生 `confirm()` 弹窗
+
+### 构建配置
+- 将 `prisma/dev.db` 种子数据库纳入版本控制（`.gitignore` 取反规则），确保打包时包含种子库
+
+---
+
 ## [v2.3.2] - 2026-04-17
 
 ### 问题修复

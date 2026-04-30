@@ -40,7 +40,7 @@ export default function AdvisorForm({ institutionId, advisor, onClose }: Advisor
     email: advisor?.email || '',
     homepage: advisor?.homepage || '',
     contactStatus: advisor?.contactStatus || 'PENDING',
-    reputationScore: advisor?.reputationScore || undefined,
+    reputationScore: advisor?.reputationScore ?? undefined,
     notes: advisor?.notes || ''
   })
   const [isSubmitting, setIsSubmitting] = useState(false)

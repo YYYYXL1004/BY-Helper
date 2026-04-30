@@ -175,6 +175,112 @@ async function ensureProductionDatabaseSchema(userDbPath: string): Promise<void>
  * 先备份用户数据库，再执行非破坏性迁移补齐缺失表，不覆盖真实用户数据。
  * 不再调用 getPrisma()（避免循环依赖），直接用临时 PrismaClient 按路径检测。
  */
+async function createDatabaseSchema(dbPath: string): Promise<void> {
+  let tmpPrisma: any = null
+  try {
+    const { PrismaClient } = require(getPrismaClientPath())
+    tmpPrisma = new PrismaClient({ datasources: { db: { url: `file:${dbPath}` } } })
+
+    await tmpPrisma.$executeRawUnsafe('BEGIN IMMEDIATE')
+    try {
+      await tmpPrisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "Institution" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "name" TEXT NOT NULL,
+          "department" TEXT NOT NULL,
+          "tier" TEXT NOT NULL,
+          "degreeType" TEXT NOT NULL,
+          "campDeadline" DATETIME,
+          "pushDeadline" DATETIME,
+          "expectedQuota" INTEGER,
+          "policyTags" TEXT NOT NULL DEFAULT '[]',
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `)
+      await tmpPrisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "Advisor" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "institutionId" TEXT NOT NULL,
+          "name" TEXT NOT NULL,
+          "title" TEXT,
+          "researchArea" TEXT NOT NULL,
+          "email" TEXT NOT NULL,
+          "homepage" TEXT,
+          "contactStatus" TEXT NOT NULL DEFAULT 'PENDING',
+          "lastContactDate" DATETIME,
+          "reputationScore" INTEGER,
+          "notes" TEXT,
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "Advisor_institutionId_fkey" FOREIGN KEY ("institutionId") REFERENCES "Institution" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+        )
+      `)
+      await tmpPrisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "Task" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "institutionId" TEXT,
+          "title" TEXT NOT NULL,
+          "dueDate" DATETIME NOT NULL,
+          "isCompleted" BOOLEAN NOT NULL DEFAULT false,
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "Task_institutionId_fkey" FOREIGN KEY ("institutionId") REFERENCES "Institution" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+        )
+      `)
+      await tmpPrisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "Asset" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "advisorId" TEXT,
+          "type" TEXT NOT NULL,
+          "localPath" TEXT NOT NULL,
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "Asset_advisorId_fkey" FOREIGN KEY ("advisorId") REFERENCES "Advisor" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+        )
+      `)
+      await tmpPrisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "Interview" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "advisorId" TEXT NOT NULL,
+          "date" DATETIME NOT NULL,
+          "format" TEXT NOT NULL,
+          "markdownNotes" TEXT NOT NULL,
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "Interview_advisorId_fkey" FOREIGN KEY ("advisorId") REFERENCES "Advisor" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+        )
+      `)
+      await tmpPrisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "EmailTemplate" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "name" TEXT NOT NULL,
+          "subject" TEXT NOT NULL,
+          "content" TEXT NOT NULL,
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `)
+      await tmpPrisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "EmailVariable" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "name" TEXT NOT NULL,
+          "templateId" TEXT NOT NULL,
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "EmailVariable_templateId_fkey" FOREIGN KEY ("templateId") REFERENCES "EmailTemplate" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+        )
+      `)
+      await tmpPrisma.$executeRawUnsafe('COMMIT')
+      log.info('[Prod] Created fresh database schema at:', dbPath)
+    } catch (err) {
+      try { await tmpPrisma.$executeRawUnsafe('ROLLBACK') } catch {}
+      throw err
+    }
+  } finally {
+    if (tmpPrisma) {
+      try { await tmpPrisma.$disconnect() } catch {}
+    }
+  }
+}
+
 async function initializeDatabase(): Promise<string> {
   const dbPath = getDatabasePath()
 
@@ -198,12 +304,18 @@ async function initializeDatabase(): Promise<string> {
       copyFileSync(resourceDbPath, userDbPath)
       log.info('[Prod] First run: copied seed database from resources')
     } else {
-      log.error('[Prod] FATAL: seed database not found at:', resourceDbPath)
-      dialog.showErrorBox(
-        'PG-Tracker 启动失败',
-        `找不到初始数据库文件。\n预期路径: ${resourceDbPath}\n\n请尝试重新安装软件。`
-      )
-      throw new Error(`Seed database not found at ${resourceDbPath}`)
+      log.warn('[Prod] Seed database not found at:', resourceDbPath)
+      try {
+        await createDatabaseSchema(userDbPath)
+        log.info('[Prod] First run: created fresh database from schema')
+      } catch (schemaErr) {
+        log.error('[Prod] FATAL: failed to create database schema:', schemaErr)
+        dialog.showErrorBox(
+          'PG-Tracker 启动失败',
+          `数据库初始化失败。\n路径: ${userDbPath}\n错误: ${getErrorMessage(schemaErr)}\n\n请尝试重新安装软件。`
+        )
+        throw schemaErr
+      }
     }
     return userDbPath
   }

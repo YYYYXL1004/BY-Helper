@@ -23,8 +23,12 @@ interface InstitutionCardProps {
 export default function InstitutionCard({ institution, onClick, onEdit }: InstitutionCardProps): JSX.Element {
   const deadline = institution.campDeadline || institution.pushDeadline
   const deadlineDate = parseValidDate(deadline)
-  const isOverdue = deadlineDate ? isPast(deadlineDate) : false
-  const daysLeft = deadlineDate ? differenceInDays(deadlineDate, new Date()) : null
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const normalizedDeadline = deadlineDate ? new Date(deadlineDate) : null
+  if (normalizedDeadline) normalizedDeadline.setHours(0, 0, 0, 0)
+  const isOverdue = normalizedDeadline ? isPast(normalizedDeadline) : false
+  const daysLeft = normalizedDeadline ? differenceInDays(normalizedDeadline, today) : null
 
   const getDeadlineStatus = (): { color: string; label: string } => {
     if (!deadlineDate) return { color: 'text-muted-foreground', label: '无截止日期' }
@@ -61,7 +65,7 @@ export default function InstitutionCard({ institution, onClick, onEdit }: Instit
         <Badge variant="outline" className="text-xs">
           {degreeTypeLabels[institution.degreeType]}
         </Badge>
-        {institution.expectedQuota && (
+        {institution.expectedQuota != null && (
           <Badge variant="outline" className="text-xs">
             <Users className="h-3 w-3 mr-1" />
             {institution.expectedQuota}人

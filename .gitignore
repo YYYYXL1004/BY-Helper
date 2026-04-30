@@ -8,7 +8,8 @@ dist-linux/
 dist-mac/
 
 # 用户数据 - 不要上传到 Git
-prisma/dev.db
 *.db
 *.db-journal
+# prisma/dev.db 是种子空库，需要打包进安装包
+!prisma/dev.db
 *.tsbuildinfo
