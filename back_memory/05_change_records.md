@@ -902,3 +902,42 @@
 - 由于 GitHub Actions 的 `npm ci` 因 `@eslint/js@10.0.1` 与 `eslint@9.39.4` peer dependency 冲突失败，已将 `@eslint/js` 锁定到 `9.39.4`。
 - 本地按顺序验证 `npm ci --ignore-scripts`、`npm run typecheck`、`npm test`、`npm run lint`、`npm run build` 均通过。
 - 后续发布策略调整为删除误推的 `v2.4.1` tag，并用 `v2.4` tag 触发三平台 Release workflow；包内版本保持 `2.4.0`。
+
+### 2026-04-30 V2.4 GitHub Actions 依赖锁修复
+
+#### 用户确认
+
+- 用户再次确认当前版本是 `V2.4`，不是 `V2.4.1`；发布 tag 继续使用 `v2.4`，包版本继续保持 `2.4.0`。
+
+#### 阅读文件和远端记录
+
+| 文件/来源 | 阅读目的 | 关键发现 |
+|------|----------|----------|
+| `package.json` | 复核版本号和构建依赖 | 版本号为 `2.4.0`；`vite` 为 `^5.4.10`；`vitest` 原为 `^4.1.5` |
+| `package-lock.json` | 定位 GitHub Actions `npm ci` 锁文件不同步原因 | `vitest@4.1.5` 依赖 `vite ^6 || ^7 || ^8`，锁文件中出现嵌套 `vite@8.0.10`，该版本需要 `esbuild ^0.27 || ^0.28` |
+| GitHub Actions run `25149155206` | 读取三平台失败日志 | Windows、macOS、Linux 均在 `npm ci` 阶段失败，错误为缺失 `esbuild@0.28.0` 及对应 `@esbuild/*@0.28.0` 锁文件条目 |
+| npm registry metadata | 核对兼容版本 | `vitest@2.1.9` 依赖 `vite ^5.0.0`，与项目当前 `vite@5.4.21` 匹配 |
+
+#### 代码更改记录
+
+| 文件 | 修改内容 | 原因 |
+|------|----------|------|
+| `package.json` | 将 devDependency `vitest` 从 `^4.1.5` 调整为 `^2.1.9` | 避免 npm 在 CI 中解析出嵌套 `vite@8` 和缺失的 `esbuild@0.28` 锁文件条目 |
+| `package-lock.json` | 同步降级 Vitest 相关依赖，移除嵌套 `vitest/node_modules/vite@8.0.10`、`rolldown` 等 Vite 8 依赖链 | 让 `npm ci` 在 GitHub 三平台 runner 上按 Vite 5 依赖树安装 |
+
+#### 本地验证记录
+
+| 命令 | 结果 |
+|------|------|
+| `npm ci` | 先因残留 `node install.js` 占用 `node_modules/electron` 报 `EBUSY`，结束残留 npm/node 进程后完整通过 |
+| `npm ci` | 依赖降级后再次完整通过，确认锁文件可用于严格安装 |
+| `npm run typecheck` | 通过 |
+| `npm test` | 通过，Vitest `2.1.9` 下 3 个测试文件、75 个测试全部通过 |
+| `npm run lint` | 通过，0 errors，保留既有 24 个 `electron/main/index.ts` 的 `any` 警告 |
+| `npm run build` | 通过，Electron main/preload/renderer 均成功构建 |
+
+#### 后续发布动作
+
+- 需要将本次依赖锁修复提交到 GitHub `main`。
+- 需要重新指向 `v2.4` tag 到新的提交，再触发 Release workflow。
+- 继续确认 Windows、macOS、Linux 三个 job 全部通过后，才算三平台发布完成。
