@@ -965,3 +965,18 @@
 |------|------|
 | PowerShell `System.Drawing.Image` 尺寸检查 | `resources/icon.png` 更新后为 `512x512` |
 | `npm run build` | 通过，确认图标资源变更不影响 Electron main/preload/renderer 构建 |
+
+#### GitHub 发布验证
+
+| 来源 | 结果 |
+|------|------|
+| GitHub Actions Release run `25149779866` | 成功 |
+| Windows job | Build/Upload 全部通过 |
+| macOS job | Build/Upload 全部通过 |
+| Linux job | Build/Upload 全部通过 |
+
+#### 发布结论
+
+- `v2.4` tag 已指向包含依赖锁修复和 Linux 图标尺寸修复的提交。
+- GitHub Release workflow 已完成 Windows、macOS、Linux 三平台构建和上传。
+- 包内版本号保持 `2.4.0`，没有再使用 `2.4.1`。
