@@ -894,3 +894,11 @@
 - 创建 tag `v2.4.1`。
 - 推送 `main` 和 `v2.4.1` 到 GitHub。
 - GitHub Actions 的 Release workflow 将在云端分别构建 Windows、macOS、Linux 并上传到 GitHub Release。
+
+### 版本纠正记录
+
+- 用户确认发布版本应为 `V2.4`，不是 `V2.4.1`。
+- 已将 `package.json` 和 `package-lock.json` 版本改回 `2.4.0`。
+- 由于 GitHub Actions 的 `npm ci` 因 `@eslint/js@10.0.1` 与 `eslint@9.39.4` peer dependency 冲突失败，已将 `@eslint/js` 锁定到 `9.39.4`。
+- 本地按顺序验证 `npm ci --ignore-scripts`、`npm run typecheck`、`npm test`、`npm run lint`、`npm run build` 均通过。
+- 后续发布策略调整为删除误推的 `v2.4.1` tag，并用 `v2.4` tag 触发三平台 Release workflow；包内版本保持 `2.4.0`。

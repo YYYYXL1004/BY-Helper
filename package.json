@@ -1,6 +1,6 @@
 {
   "name": "pg-tracker",
-  "version": "2.4.1",
+  "version": "2.4.0",
   "description": "保研信息收集与决策分析系统",
   "author": "Jensenyjc <jensenyjc@example.com>",
   "main": "./out/main/index.js",
@@ -48,7 +48,7 @@
   },
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^2.0.0",
-    "@eslint/js": "^10.0.1",
+    "@eslint/js": "^9.39.4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^22.9.0",
