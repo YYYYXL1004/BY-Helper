@@ -941,3 +941,27 @@
 - 需要将本次依赖锁修复提交到 GitHub `main`。
 - 需要重新指向 `v2.4` tag 到新的提交，再触发 Release workflow。
 - 继续确认 Windows、macOS、Linux 三个 job 全部通过后，才算三平台发布完成。
+
+### 2026-04-30 Linux 图标尺寸修复
+
+#### 阅读和远端验证记录
+
+| 文件/来源 | 阅读目的 | 关键发现 |
+|------|----------|----------|
+| GitHub Actions run `25149594984` | 查看 V2.4 三平台发布结果 | Windows 和 macOS 均完成 Build/Upload；Linux 在 Build 阶段失败 |
+| Linux 失败日志 | 定位失败原因 | `electron-builder` 报错：`resources/icon.png must be at least 256x256` |
+| `resources/icon.png` | 检查图标尺寸 | 原尺寸为 `135x142`，不满足 Linux AppImage/deb 图标要求 |
+| `electron-builder-linux.yml` | 确认 Linux 图标配置 | `linux.icon` 指向 `resources/icon.png` |
+
+#### 代码/资源更改记录
+
+| 文件 | 修改内容 | 原因 |
+|------|----------|------|
+| `resources/icon.png` | 基于现有图标生成透明背景 `512x512` PNG，并居中保留原图视觉 | 满足 Linux electron-builder 对图标至少 `256x256` 的要求 |
+
+#### 验证记录
+
+| 命令/检查 | 结果 |
+|------|------|
+| PowerShell `System.Drawing.Image` 尺寸检查 | `resources/icon.png` 更新后为 `512x512` |
+| `npm run build` | 通过，确认图标资源变更不影响 Electron main/preload/renderer 构建 |
