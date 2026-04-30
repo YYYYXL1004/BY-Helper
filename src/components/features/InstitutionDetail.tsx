@@ -8,7 +8,7 @@
  */
 import { useState, useEffect } from 'react'
 import { ArrowLeft, Building2, Users, Edit2, Trash2, Plus, Mail, ExternalLink, FileText, CheckCircle2, Circle, AlertTriangle, ArrowRight, ChevronDown, Check } from 'lucide-react'
-import { useStore, Advisor, Task } from '../../stores/appStore'
+import { useStore, Advisor, Asset, Task } from '../../stores/appStore'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
@@ -34,7 +34,7 @@ function renderStarRating(score: number | null | undefined): string | null {
 }
 
 export default function InstitutionDetail({ institutionId, onBack }: InstitutionDetailProps): JSX.Element {
-  const { institutions, isLoading, deleteInstitution, updateTask, deleteTask, updateAdvisor, conflictWarnings, checkConflicts } = useStore()
+  const { institutions, isLoading, deleteInstitution, updateTask, deleteTask, updateAdvisor, addAsset, conflictWarnings, checkConflicts } = useStore()
   const [showAdvisorForm, setShowAdvisorForm] = useState(false)
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [showInterviewForm, setShowInterviewForm] = useState(false)
@@ -300,7 +300,7 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
             {institution.advisors && institution.advisors.length > 0 ? (
               <div className="space-y-4">
                 {institution.advisors.map((advisor) => (
-                  <AdvisorCard key={advisor.id} advisor={advisor} onEdit={() => { setSelectedAdvisor(advisor); setShowAdvisorForm(true) }} onAddInterview={() => { setSelectedAdvisor(advisor); setShowInterviewForm(true) }} updateAdvisor={updateAdvisor} />
+                  <AdvisorCard key={advisor.id} advisor={advisor} onEdit={() => { setSelectedAdvisor(advisor); setShowAdvisorForm(true) }} onAddInterview={() => { setSelectedAdvisor(advisor); setShowInterviewForm(true) }} updateAdvisor={updateAdvisor} addAsset={addAsset} />
                 ))}
               </div>
             ) : (
@@ -353,9 +353,10 @@ interface AdvisorCardProps {
   onEdit: () => void
   onAddInterview: () => void
   updateAdvisor: (id: string, data: Partial<Advisor>) => Promise<void>
+  addAsset: (data: Omit<Asset, 'id'>) => Promise<Asset>
 }
 
-function AdvisorCard({ advisor, onEdit, onAddInterview, updateAdvisor }: AdvisorCardProps): JSX.Element {
+function AdvisorCard({ advisor, onEdit, onAddInterview, updateAdvisor, addAsset }: AdvisorCardProps): JSX.Element {
   const [showAssets, setShowAssets] = useState(false)
   const starRating = renderStarRating(advisor.reputationScore)
 
@@ -363,10 +364,10 @@ function AdvisorCard({ advisor, onEdit, onAddInterview, updateAdvisor }: Advisor
     try { await window.api.file.openExternal(path) } catch (error) { console.error('Failed to open file:', error) }
   }
 
-  const handleSelectFile = async (advisorId: string, type: string): Promise<void> => {
+  const handleSelectFile = async (advisorId: string, type: Asset['type']): Promise<void> => {
     try {
       const path = await window.api.file.selectFile({ filters: [{ name: 'Documents', extensions: ['pdf', 'doc', 'docx', 'tex'] }, { name: 'All Files', extensions: ['*'] }] })
-      if (path) await window.api.asset.create({ advisorId, type, localPath: path })
+      if (path) await addAsset({ advisorId, type, localPath: path })
     } catch (error) { console.error('Failed to select file:', error) }
   }
 

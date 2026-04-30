@@ -68,13 +68,6 @@ export function ColorThemeProvider({ children }: ColorThemeProviderProps): JSX.E
   }, [colorTheme])
 
   // 初始化时应用保存的主题
-  useEffect(() => {
-    const root = document.documentElement
-    if (colorTheme !== 'default') {
-      root.setAttribute('data-theme', colorTheme)
-    }
-  }, [])
-
   const setColorTheme = (theme: ColorTheme): void => {
     setColorThemeState(theme)
   }

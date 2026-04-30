@@ -17,6 +17,7 @@ import { Label } from '../ui/label'
 import { ConfirmDialog } from '../ui/confirm-dialog'
 import { useAppVersion } from '../../lib/useAppVersion'
 import { useUpdater } from '../../lib/useUpdater'
+import { getErrorMessage } from '../../lib/utils'
 
 export default function Settings(): JSX.Element | null {
   const { theme, setTheme } = useTheme()
@@ -49,7 +50,7 @@ export default function Settings(): JSX.Element | null {
       URL.revokeObjectURL(url)
     } catch (error) {
       console.error('Failed to export data:', error)
-      alert('导出失败：' + (error as Error).message)
+      alert('导出失败：' + getErrorMessage(error))
     }
   }
 
@@ -73,8 +74,20 @@ export default function Settings(): JSX.Element | null {
           const content = await readFile()
           const data = JSON.parse(content)
           // 检测新旧格式：新格式包含 institutions + emailTemplates 字段，旧格式是纯数组
-          const payload = data.institutions !== undefined ? data : { institutions: Array.isArray(data) ? data : [] }
-          const result = await window.api.backup.importAll(payload)
+          const payload = data.institutions !== undefined || data.orphanTasks !== undefined || data.emailTemplates !== undefined
+            ? data
+            : Array.isArray(data)
+              ? { institutions: data }
+              : {}
+          const hasImportableData = Array.isArray(payload.institutions) || Array.isArray(payload.orphanTasks) || Array.isArray(payload.emailTemplates)
+          if (!hasImportableData) {
+            alert('导入失败：无效的数据格式')
+            return
+          }
+          const shouldImport = window.confirm('导入会先清空当前数据，再恢复备份文件中的内容。建议确认已导出当前备份后再继续。是否继续？')
+          if (!shouldImport) return
+
+          const result = await window.api.backup.importAll(payload, { mode: 'replace' })
           if (!result.success) {
             alert('导入失败：' + (result.error || '无效的数据格式'))
             return
@@ -97,15 +110,16 @@ export default function Settings(): JSX.Element | null {
 
   const handleClearData = async (): Promise<void> => {
     try {
-      const institutions = await window.api.institution.getAll()
-      for (const inst of institutions) {
-        await window.api.institution.delete(inst.id)
+      const result = await window.api.backup.clearAll()
+      if (!result.success) {
+        alert('清除失败：' + (result.error || '未知错误'))
+        return
       }
       alert('数据已清除')
       window.location.reload()
     } catch (error) {
       console.error('Failed to clear data:', error)
-      alert('清除失败：' + (error as Error).message)
+      alert('清除失败：' + getErrorMessage(error))
     }
   }
 

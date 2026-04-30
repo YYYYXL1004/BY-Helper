@@ -6,6 +6,125 @@
 
 ---
 
+## 2026-04-29 优化：修复 5 个审查发现
+
+### 用户目标
+
+- 根据代码审查发现进行优化。
+- 修复清空数据不完整、详情页绑定文件不刷新、备份导入重复 ID、更新失败状态、Linux 图标资源缺失。
+
+### 阅读文件记录
+
+| 文件 | 阅读目的 | 关键发现 |
+|------|----------|----------|
+| `electron/main/index.ts` | 修复备份、清空、导入和启动失败流程 | 需要统一清空所有业务表；导入默认应为替换恢复；初始化失败后应退出应用 |
+| `electron/preload/index.ts` | 同步新增 IPC | 需要暴露 `backup.clearAll()` 和带 options 的 `backup.importAll()` |
+| `src/env.d.ts` | 同步 renderer 类型 | 需要补齐 `backup.clearAll` 和 `importAll` options 类型 |
+| `src/components/features/Settings.tsx` | 修复清空和导入流程 | 清空应调用主进程完整清空；导入前应确认替换式恢复并校验备份格式 |
+| `src/components/features/InstitutionDetail.tsx` | 修复绑定文件刷新 | 文件绑定应走 store `addAsset()`，创建成功后刷新 institutions |
+| `src/lib/useUpdater.ts` | 修复更新失败 UI 状态 | IPC 返回 `{ success: false }` 时也要进入 error 状态 |
+| `src/stores/appStore.ts` | 收敛任务刷新语义 | `updateTask`/`deleteTask` 应同时刷新 institutions 和 orphanTasks |
+| `src/stores/appStore.test.ts` | 补测试 | 增加 `updateTask` 成功后刷新 orphanTasks 的测试，更新 deleteTask 断言 |
+| `electron-builder-linux.yml` | 检查 Linux 图标引用 | 配置引用 `resources/icon.png` |
+| `软件功能页面截屏/软件图标.png` | 寻找可复用图标资源 | 复制为 `resources/icon.png` |
+
+### 代码修改记录
+
+| 文件 | 修改内容 | 原因 |
+|------|----------|------|
+| `electron/main/index.ts` | 新增 `clearApplicationData()`，按依赖顺序清空 `EmailVariable`、`EmailTemplate`、`Asset`、`Interview`、`Task`、`Advisor`、`Institution` | 让“清除所有数据”真正覆盖全部业务表，避免独立任务、邮件模板和孤立资源残留 |
+| `electron/main/index.ts` | 新增 `backup:clearAll` IPC | 给设置页提供原子化完整清空入口 |
+| `electron/main/index.ts` | `backup:importAll` 新增 options，默认 `replace`，导入前先清空；保留 `append` 模式 | 备份恢复不再因重复 id 失败，同时保留未来追加导入能力 |
+| `electron/main/index.ts` | 导入前校验备份 payload 至少包含一个可导入数组 | 防止无效文件触发替换式清空 |
+| `electron/main/index.ts` | 数据库初始化失败后调用 `app.quit()` | 避免启动失败后留下无窗口进程 |
+| `electron/preload/index.ts`、`src/env.d.ts` | 同步 `backup.clearAll()` 和 `backup.importAll(data, options)` | 保持 preload 和 renderer 类型一致 |
+| `src/components/features/Settings.tsx` | 清空数据改为调用 `window.api.backup.clearAll()` | 修复清空数据不完整 |
+| `src/components/features/Settings.tsx` | 导入前校验格式并提示会先清空再恢复；调用 `importAll(payload, { mode: 'replace' })` | 明确导入语义，避免用户误以为是追加 |
+| `src/components/features/InstitutionDetail.tsx` | `AdvisorCard` 绑定文件改走 `addAsset()` | 绑定文件后立即刷新详情数据 |
+| `src/lib/useUpdater.ts` | 处理 `check()`/`download()` 返回的 `success:false` | 更新失败能进入错误状态，不再卡在 checking |
+| `src/stores/appStore.ts` | `updateTask`/`deleteTask` 成功后刷新 `orphanTasks` | 收敛独立任务刷新逻辑，减少页面级补丁依赖 |
+| `src/stores/appStore.test.ts` | 新增/更新任务刷新断言 | 覆盖 store 刷新语义 |
+| `resources/icon.png` | 新增 Linux 打包图标资源 | 修复 Linux 配置引用的缺失文件 |
+
+### 验证记录
+
+| 命令 | 结果 |
+|------|------|
+| `npm run typecheck` | 通过 |
+| `npm run lint` | 通过，0 errors，142 warnings |
+| `npm test` | 通过，3 files / 75 tests |
+| `npm run build` | 通过 |
+| 清理 `tsconfig.tsbuildinfo` | 已清理 |
+
+### 剩余风险和后续
+
+- `lint` warning 仍主要是既有 `any` 类型债和少量 hook deps，可后续按 IPC DTO 类型化逐步收敛。
+- 三平台真实打包验证还未在本轮执行，尤其 macOS/Linux 需要对应 runner 或目标环境确认。
+- `backup:importAll` 已支持 `append`，但 UI 当前固定使用替换式恢复；后续如需要可在设置页增加“追加导入”选项。
+
+## 2026-04-29 代码阅读：潜在 bug 复查
+
+### 用户目标
+
+- 先阅读当前文件，判断是否还有潜在 bug。
+- 本次不修改业务代码，只记录阅读范围、验证命令和审查发现。
+
+### 阅读文件记录
+
+| 文件 | 阅读目的 | 关键发现 |
+|------|----------|----------|
+| `back_memory/README.md` | 确认维护流程和记录要求 | 每次阅读、验证、修改后都应追加记录到 `05_change_records.md` |
+| `back_memory/02_technical_details.md` | 确认 IPC、数据库、打包风险 | 当前剩余重点集中在打包资源、IPC 类型和验证覆盖 |
+| `back_memory/03_project_progress.md` | 确认当前阶段和待办 | 阶段七三平台打包验证仍未完成 |
+| `back_memory/04_code_file_index.md` | 确认重点审查入口 | 优先检查 main/preload/store/Settings/Timeline/InstitutionDetail |
+| `package.json` | 确认版本、脚本和测试命令 | 当前版本为 `2.4.0`，`typecheck`/`lint`/`test` 脚本可用 |
+| `electron/main/index.ts` | 审查数据库、IPC、备份导入、更新 IPC | `backup:importAll` 偏追加导入；启动初始化失败时仅 return，可能残留无窗口进程 |
+| `electron/preload/index.ts` | 审查暴露给 renderer 的 IPC | 暴露接口完整，但大量 `any` 仍是类型债 |
+| `electron/main/updater.ts` | 审查自动更新事件流 | updater 状态依赖事件推送，窗口重建场景仍需复查 |
+| `src/stores/appStore.ts` | 审查全局刷新策略 | `updateTask`/`deleteTask` 只刷新 institutions，不通用刷新 orphanTasks |
+| `src/components/features/Settings.tsx` | 审查导入导出、清空数据、更新 UI | “清除所有数据”只删除院校，未删除独立任务和邮件模板 |
+| `src/components/features/InstitutionDetail.tsx` | 审查详情页文件/任务/导师操作 | 绑定文件直接调 `window.api.asset.create`，绕过 store 刷新 |
+| `src/components/features/Timeline.tsx` | 审查独立任务操作 | 页面内手动刷新 orphanTasks，当前可用但逻辑分散 |
+| `src/components/features/InterviewForm.tsx` | 审查面经新增刷新 | 使用 store `addInterview`，会刷新 institutions |
+| `src/components/features/TaskForm.tsx` | 审查任务新增/编辑 | 使用 store `addTask`/`updateTask` |
+| `src/components/features/AdvisorForm.tsx` | 审查导师新增/编辑 | 使用 store `addAdvisor`/`updateAdvisor` |
+| `src/lib/utils.ts` | 审查日期和校验工具 | 日期 helper 有测试覆盖 |
+| `src/lib/useUpdater.ts` | 审查自动更新 UI 状态 | 忽略 IPC 返回的 `{ success: false }`，可能一直停在 checking |
+| `prisma/schema.prisma` | 对照备份/导入和级联删除 | 删除院校不会删除 orphanTasks/emailTemplates |
+| `electron-builder*.yml` | 审查三平台打包配置 | Linux 配置引用 `resources/icon.png`，当前未发现该文件 |
+| `.github/workflows/release.yml` | 审查发布构建流程 | 三平台 tag 构建存在，但仍需真实跑一次验证 |
+| `src/lib/*.test.ts`、`src/stores/appStore.test.ts` | 确认测试覆盖 | 当前 3 个测试文件覆盖 store、utils、patch builder |
+
+### 验证记录
+
+| 命令 | 结果 |
+|------|------|
+| `node -e "JSON.parse(...package.json...)"` | 通过，`package.json` 有效 |
+| `npm run typecheck` | 通过 |
+| `npm run lint` | 通过，0 errors，139 warnings |
+| `npm test` | 通过，3 files / 74 tests |
+| 清理 `tsconfig.tsbuildinfo` | 已清理本次 typecheck 生成的缓存文件 |
+| `git status --short --untracked-files=all` | 无输出，工作区干净 |
+
+### 潜在 bug / 风险清单
+
+| 优先级 | 位置 | 问题 | 影响 |
+|------|------|------|------|
+| P1 | `src/components/features/Settings.tsx:97` | “清除所有数据”只删除 institutions | 独立任务、邮件模板、邮件变量可能残留，和 UI 文案不一致 |
+| P1 | `src/components/features/InstitutionDetail.tsx:366` | 绑定文件直接调用 `window.api.asset.create` | 新文件记录可能不会立刻显示，需要刷新或重新进入详情页 |
+| P1 | `electron/main/index.ts:922` | `backup:importAll` 是追加式 create | 在已有数据环境导入备份时，重复 id 可能导致整次事务失败；“恢复备份”语义不清 |
+| P2 | `src/lib/useUpdater.ts:31` | 自动更新 Hook 忽略 IPC 返回的失败对象 | `update:check`/`update:download` 返回 `{ success: false }` 时 UI 可能停在检查中或无错误提示 |
+| P2 | `electron-builder-linux.yml:40` | Linux 图标路径指向 `resources/icon.png`，当前未发现该文件 | Linux 打包或图标资源可能失败/缺失 |
+| P2 | `electron/main/index.ts:1031` | 数据库初始化失败时只 `return` 不 `app.quit()` | 可能留下无窗口 Electron 进程 |
+| P3 | `src/stores/appStore.ts:262` | 通用 `updateTask`/`deleteTask` 不刷新 orphanTasks | Timeline 当前手动补刷，但其他未来入口复用 store 时可能出现独立任务列表陈旧 |
+| P3 | lint 全局 | 139 个 warning，多数为 `any` 和 hook deps | 不阻塞运行，但会降低后续维护和 IPC 类型安全 |
+
+### 后续建议
+
+1. 先修 P1：清空数据语义、详情页绑定文件刷新、备份导入的覆盖/合并策略。
+2. 再修 P2：自动更新错误态、Linux 图标资源、初始化失败退出。
+3. 最后处理 P3：收敛 store 的任务刷新语义和 IPC DTO 类型。
+
 ## 记录规则
 
 ### 什么时候必须追加
@@ -565,3 +684,213 @@
 - Timeline 孤儿任务直接调 IPC 绕过 store，虽然有注释解释（避免 store 的 `loadInstitutions` 太重），但可考虑在 store 中增加轻量级 orphan toggle 方法。
 - InstitutionDetail 的 `useStore()` 无 selector，可后续优化性能。
 - 三平台打包验证仍是第七阶段待办。
+---
+
+## 2026-04-30 继续修 bug：处理 review findings 并收敛 lint warnings
+
+### 用户目标
+
+- 继续根据 review findings 修复 bug。
+- 继续审查 142 个 lint warnings，优先处理不会改变业务逻辑的真实类型和 hook 问题。
+- 每次读取文件和修改代码后写入 `back_memory`，方便后续追踪。
+
+### 阅读文件记录
+
+| 文件 | 阅读目的 | 关键发现 |
+|------|----------|----------|
+| `src/components/features/Settings.tsx` | 审查清除数据和备份导入流程 | 清除数据原先只删院校，独立任务、邮件模板、变量可能残留；导入备份需要明确 replace 策略 |
+| `src/components/features/InstitutionDetail.tsx` | 审查导师文件绑定流程 | 绑定文件直接调用 `window.api.asset.create`，绕过 store 刷新 |
+| `electron/main/index.ts` | 审查备份导入、清空数据、启动失败和主进程 warning | 备份导入原为追加式；主进程有大量 `any` 和错误处理弱类型 |
+| `electron/preload/index.ts` | 审查 renderer 暴露 API 类型 | preload 使用大量 `any`，且需要新增 `backup.clearAll` 和带 mode 的 `backup.importAll` |
+| `src/env.d.ts` | 审查全局 `window.api` 类型 | IPC 类型大量 `any`，补充结构化类型后需要 `export {}` 保持全局声明生效 |
+| `src/lib/useUpdater.ts` | 审查自动更新失败态 | 主进程返回 `success:false` 时，hook 原先不会进入错误 UI |
+| `src/stores/appStore.ts` | 审查 store 刷新和错误处理 | 独立任务更新/删除后需要刷新 `orphanTasks`；错误处理和邮件模板返回类型可收紧 |
+| `src/stores/appStore.test.ts` | 审查现有测试覆盖 | 需要补充 `updateTask` 刷新 `orphanTasks` 的回归测试 |
+| `src/components/ColorThemeContext.tsx` | 审查 hook deps warning | 初始化主题 effect 与主 effect 重复，可删除空依赖 effect |
+| `src/components/features/Dashboard.tsx` | 审查 hook deps 和 `any` warning | `loadOrphanTasks` 需要进入依赖数组，任务类型可用 `Task` |
+| `src/components/features/Timeline.tsx` | 审查 hook deps 和错误处理 | `loadOrphanTasks` 需要进入依赖数组，catch 参数可改为 `unknown` |
+| `src/components/features/InstitutionForm.tsx` | 审查错误处理 warning | catch 参数可改为 `unknown` |
+| `src/components/features/EmailTemplates.tsx` | 审查邮件模板类型 warning | 补充邮件模板/变量类型并处理保存失败错误 |
+| `electron-builder-linux.yml` | 审查 Linux 图标引用 | 配置引用 `resources/icon.png`，项目缺少该文件 |
+
+### 代码修改记录
+
+| 文件 | 修改内容 | 原因 |
+|------|----------|------|
+| `electron/main/index.ts` | 新增 `clearApplicationData()`，并注册 `backup:clearAll` | 让设置页“清除所有数据”真正清掉院校、导师、任务、资产、面试、邮件模板、变量 |
+| `electron/main/index.ts` | `backup:importAll` 增加 `{ mode: 'replace' | 'append' }`，默认 replace 时先清空再导入；并校验备份 payload | 修复备份恢复的追加式导入和同 id 冲突风险 |
+| `electron/main/index.ts` | 数据库初始化失败后 `app.quit()` | 避免启动失败后进程继续处于异常状态 |
+| `electron/main/index.ts` | 新增 `getErrorMessage()` / `getErrorStack()` / `toRecord()`，部分主进程错误处理从 `any` 改为 `unknown` | 收敛 warning，并避免非 Error 对象导致二次异常 |
+| `electron/preload/index.ts` | 新增 `backup.clearAll()`，`backup.importAll(data, options)`；补充本地 IPC 输入类型和 updater status 类型 | 与主进程新 API 对齐，并减少 preload `any` warning |
+| `src/env.d.ts` | 用 `Institution`、`Advisor`、`Task`、`Asset`、`EmailTemplate` 等类型替换 `window.api` 中的大量 `any`；新增 `BackupData` 和 `FileSelectOptions` | 提升 renderer IPC 调用类型质量，修复 33 个 env warning |
+| `src/components/features/Settings.tsx` | 清除数据改用 `window.api.backup.clearAll()`；导入备份前确认 replace，调用 `importAll(payload, { mode: 'replace' })` | 修复清除不完整和备份恢复语义不明确 |
+| `src/components/features/InstitutionDetail.tsx` | 文件绑定改为调用 store `addAsset()`，并传入 `AdvisorCard` | 绑定文件后会刷新院校详情，避免 UI 不显示新文件 |
+| `src/lib/useUpdater.ts` | `checkForUpdates()` / `downloadUpdate()` 读取 `success:false` 并设置 `error` 状态；catch 改为 `unknown` | 修复更新失败状态不进入 UI |
+| `resources/icon.png` | 复制现有软件图标到 Linux 打包配置需要的位置 | 修复 Linux 打包图标资源缺失 |
+| `src/stores/appStore.ts` | 新增 `EmailTemplate` / `EmailVariable` 类型，catch 改为 `unknown`，邮件创建/更新返回缺失 data 时抛错 | 收紧 store 类型，避免成功响应缺数据时静默返回 undefined |
+| `src/stores/appStore.ts` | `updateTask` / `deleteTask` 在刷新院校后继续刷新 `orphanTasks` | 防止独立任务更新/删除后列表状态陈旧 |
+| `src/stores/appStore.test.ts` | 补充 `updateTask` 刷新 `orphanTasks` 的测试，并更新删除任务测试 mock | 防止独立任务刷新逻辑回归 |
+| `src/components/ColorThemeContext.tsx` | 删除重复的空依赖初始化 effect | 修复 hook deps warning，保留 `colorTheme` 变化时统一写 DOM/localStorage |
+| `src/components/features/Dashboard.tsx` | `useEffect` 增加 `loadOrphanTasks` 依赖，任务类型从 `any` 改为 `Task` | 修复 hook deps 和 `any` warning |
+| `src/components/features/Timeline.tsx` | `useEffect` 增加 `loadOrphanTasks` 依赖，catch 参数改为 `unknown` | 修复 hook deps 和 `any` warning |
+| `src/components/features/InstitutionForm.tsx` | catch 参数改为 `unknown` 并安全读取错误信息 | 修复 `any` warning |
+| `src/components/features/EmailTemplates.tsx` | 补充邮件模板局部类型，保存失败 catch 改为 `unknown`，模板列表移除 `any` | 修复邮件模板页类型 warning |
+
+### 验证记录
+
+| 命令 | 结果 |
+|------|------|
+| `npm run typecheck` | 通过 |
+| `npm run lint` | 0 errors，warning 从 142 降到 24，剩余均在 `electron/main/index.ts` 的动态 Prisma/IPC 类型 |
+| `npm test` | 3 个测试文件、75 个测试全部通过 |
+| `npm run build` | 通过，main/preload/renderer 均成功产物 |
+
+### 剩余风险和后续
+
+- `electron/main/index.ts` 仍有 24 个 `@typescript-eslint/no-explicit-any` warning，主要来自动态加载 Prisma Client、transaction client、IPC 入参和备份导入对象。继续清零需要为主进程建立本地 IPC/Backup/Prisma-like 类型层，建议单独做一轮，避免为了清 warning 写出假类型。
+- 当前修复已经覆盖 review findings 里的 5 个 bug，并保持 typecheck/test/build 通过。
+
+---
+
+## 2026-04-30 整体检查与测试：Timeline 直接 IPC 失败未处理
+
+### 用户目标
+
+- 检查软件整体是否还有潜在 bug。
+- 跑完整测试和构建验证。
+
+### 阅读文件记录
+
+| 文件 | 阅读目的 | 关键发现 |
+|------|----------|----------|
+| `package.json` | 确认项目脚本和可运行测试命令 | 可执行 `typecheck`、`lint`、`test`、`build`、`prisma:generate` |
+| `src/components/features/Settings.tsx` | 复查清除、导入、导出和更新入口 | 清除/导入逻辑已对齐 `backup.clearAll` / replace 导入；catch 中仍有强制 `as Error` |
+| `electron/main/index.ts` | 复查备份导入和 IPC handler | 备份导入 replace/clearAll 已对齐；剩余 warning 主要是动态 Prisma/IPC 类型 |
+| `electron/main/updater.ts` | 确认更新事件是否会通知 renderer | 主进程会发送 checking、available、not-available、downloading、downloaded、error 状态 |
+| `src/components/features/UpdateNotification.tsx` | 复查更新通知展示 | 通知依赖 `useUpdater` 状态，未发现新的阻断问题 |
+| `src/components/features/Timeline.tsx` | 审查直接 IPC 更新任务路径 | `window.api.task.update` 返回 `success:false` 时 Promise 不 reject，原逻辑会当成功处理 |
+| `src/components/features/AdvisorForm.tsx` | 审查表单错误提示 | catch 中 `(error as Error).message` 对非 Error 值不安全 |
+| `src/components/features/InterviewForm.tsx` | 审查表单错误提示 | 同上 |
+| `src/components/features/TaskForm.tsx` | 审查表单错误提示 | 同上 |
+| `src/lib/utils.ts` | 查找是否已有错误消息 helper | 原先没有通用 `getErrorMessage` |
+
+### 代码修改记录
+
+| 文件 | 修改内容 | 原因 |
+|------|----------|------|
+| `src/lib/utils.ts` | 新增 `getErrorMessage(error, fallback)` | 统一安全读取未知错误消息，避免非 Error 值导致提示为 undefined |
+| `src/components/features/Timeline.tsx` | `handleToggleTask` 检查 `task.update` 的 `result.success`，失败时抛错进入回滚逻辑 | 修复直接 IPC 返回失败但 UI 当成功的问题 |
+| `src/components/features/Timeline.tsx` | `handleSaveEdit` 检查 `task.update` 的 `result.success`，失败时提示并停止关闭弹窗 | 防止独立任务编辑失败后 UI 假成功 |
+| `src/components/features/AdvisorForm.tsx` | 保存失败提示改用 `getErrorMessage` | 加固非 Error 异常处理 |
+| `src/components/features/InterviewForm.tsx` | 保存失败提示改用 `getErrorMessage` | 同上 |
+| `src/components/features/TaskForm.tsx` | 保存失败提示改用 `getErrorMessage` | 同上 |
+| `src/components/features/Settings.tsx` | 导出/清除失败提示改用 `getErrorMessage` | 同上 |
+
+### 验证记录
+
+| 命令 | 结果 |
+|------|------|
+| `git diff --check` | 通过，无 whitespace error |
+| `npm run typecheck` | 通过 |
+| `npm test` | 3 个测试文件、75 个测试全部通过 |
+| `npm run lint` | 0 errors，24 warnings，剩余均在 `electron/main/index.ts` |
+| `npm run build` | 通过 |
+| `npm run prisma:generate` | 通过，Prisma Client 成功生成 |
+| `node -e "const p=require('./package.json'); console.log(p.description);"` | 输出中文描述正常，未发现 package 元数据乱码 |
+
+### 剩余风险和后续
+
+- 仍未做真实 Electron 窗口的手工冒烟操作；当前验证覆盖 TypeScript、单元测试、lint、生产构建、Prisma Client 生成。
+- `electron/main/index.ts` 仍有 24 个 `any` warning，建议下一轮专门抽主进程 IPC/Backup/Prisma 类型层处理。
+
+---
+
+## 2026-04-30 真实 Electron 窗口冒烟测试
+
+### 用户目标
+
+- 做真实 Electron 窗口手工冒烟操作，确认软件能真正启动和交互。
+
+### 阅读文件记录
+
+| 文件 | 阅读目的 | 关键发现 |
+|------|----------|----------|
+| `electron/main/index.ts` | 确认窗口加载路径和远程调试可用性 | 构建产物会加载 `out/renderer/index.html`，窗口 ready 后 show |
+| `electron.vite.config.ts` | 确认 main/preload/renderer 构建入口 | 构建入口正常，产物位于 `out/main`、`out/preload`、`out/renderer` |
+| `out/main/index.js` / `out/renderer/index.html` | 确认构建产物存在 | 两个产物均存在，可用于真实 Electron 启动 |
+
+### 操作记录
+
+| 操作 | 结果 |
+|------|------|
+| 使用 `node_modules/electron/dist/electron.exe --remote-debugging-port=9333 .` 启动真实 Electron | 成功启动窗口 |
+| 通过 DevTools Protocol 读取页面 | `document.readyState` 为 `complete` |
+| 检查页面标题 | `PG-Tracker - 保研信息收集与决策分析系统` |
+| 检查加载 URL | `file:///.../out/renderer/index.html` |
+| 检查 renderer 桥接 | `window.api` 和 `window.electron` 均存在 |
+| 调用 `window.api.app.getVersion()` | 返回 `2.4.0` |
+| 检查页面文本 | 左侧导航、版本号、院校看板、已有院校数据均正常渲染 |
+| 点击主导航：总览、日程、邮件模板、设置、院校看板 | 均成功响应 |
+| 点击“添加院校” | 弹窗成功打开 |
+| 检查添加院校弹窗字段 | “学校名称”“院系名称”等字段正常渲染 |
+| 点击“取消” | 弹窗成功关闭，未写入新数据 |
+
+### 验证结论
+
+- 真实 Electron 窗口可以启动。
+- 构建产物加载正常，无白屏。
+- Preload API 注入正常，版本号实时读取正常。
+- 基础导航交互正常。
+- 添加院校弹窗可以打开和关闭，表单字段正常显示。
+
+### 剩余风险和后续
+
+- 本次冒烟没有实际提交新增院校，避免污染当前真实数据库；此前自动化和代码修复已覆盖添加后刷新路径。
+- 可在下一轮加一个专用测试数据库环境，用真实 Electron 自动提交新增院校，再验证 UI 列表增加，避免影响用户当前数据。
+
+---
+
+## 2026-04-30 GitHub 三平台发布准备
+
+### 用户目标
+
+- 将 Windows、macOS、Linux 三个平台发布到 GitHub。
+
+### 阅读文件记录
+
+| 文件 | 阅读目的 | 关键发现 |
+|------|----------|----------|
+| `.github/workflows/release.yml` | 确认三平台上传机制 | 推送 `v*` tag 后会分别在 Windows、macOS、Linux runner 构建并上传 GitHub Release |
+| `electron-builder.yml` | 检查 Windows 发布仓库 | 原 publish repo 指向 `pg-tracker-v2`，与当前 GitHub remote 不一致 |
+| `electron-builder-mac.yml` | 检查 macOS 发布仓库 | 同上 |
+| `electron-builder-linux.yml` | 检查 Linux 发布仓库和图标 | 同上；Linux 图标已由 `resources/icon.png` 补齐 |
+| `package.json` / `package-lock.json` | 检查发布版本号 | 现有 tag 为 `v2.4.0`，本次发布需使用新版本 |
+| GitHub remote / auth | 检查上传权限和目标仓库 | 当前仓库为 `Jensenyjc/PG-tracker`，`gh auth status` 已登录且具备 repo/workflow 权限 |
+
+### 代码修改记录
+
+| 文件 | 修改内容 | 原因 |
+|------|----------|------|
+| `package.json` | 版本号升到 `2.4.1` | 避免覆盖已有 `v2.4.0` tag/release |
+| `package-lock.json` | 同步版本号到 `2.4.1` | 保持 npm 元数据一致 |
+| `electron-builder.yml` | publish repo 改为 `PG-tracker` | 对齐真实 GitHub 仓库 |
+| `electron-builder-mac.yml` | publish repo 改为 `PG-tracker` | 对齐真实 GitHub 仓库 |
+| `electron-builder-linux.yml` | publish repo 改为 `PG-tracker` | 对齐真实 GitHub 仓库 |
+
+### 验证记录
+
+| 命令 | 结果 |
+|------|------|
+| `gh auth status` | 已登录 `Jensenyjc`，token 具备 `repo`、`workflow` 权限 |
+| `gh repo view --json nameWithOwner,defaultBranchRef,url` | 目标仓库确认是 `Jensenyjc/PG-tracker`，默认分支 `main` |
+| `npm run typecheck` | 通过 |
+| `npm test` | 3 个测试文件、75 个测试全部通过 |
+| `npm run lint` | 0 errors，24 warnings，剩余均在 `electron/main/index.ts` |
+| `npm run build` | 通过 |
+
+### 发布策略
+
+- 提交当前修复到 `main`。
+- 创建 tag `v2.4.1`。
+- 推送 `main` 和 `v2.4.1` 到 GitHub。
+- GitHub Actions 的 Release workflow 将在云端分别构建 Windows、macOS、Linux 并上传到 GitHub Release。

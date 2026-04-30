@@ -16,6 +16,10 @@ export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs))
 }
 
+export function getErrorMessage(error: unknown, fallback = '未知错误'): string {
+  return error instanceof Error ? error.message : fallback
+}
+
 // ==================== 数据解析工具 ====================
 
 /**

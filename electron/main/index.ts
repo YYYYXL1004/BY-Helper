@@ -13,9 +13,26 @@ import log from 'electron-log'
 import { spawn } from 'child_process'
 import { initUpdater, autoUpdater } from './updater'
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function getErrorStack(error: unknown): string | undefined {
+  return error instanceof Error ? error.stack : undefined
+}
+
 // ==================== 全局崩溃日志捕捉 ====================
 // 必须在最早期注册，确保任何未捕获的异常都能记录
 // 注意：dialog.showErrorBox 需要 app.ready 之后才能用，这里只写文件
+type JsonRecord = Record<string, unknown>
+
+function toRecord(value: unknown, label: string): JsonRecord {
+  if (value && typeof value === 'object') {
+    return value as JsonRecord
+  }
+  throw new Error(`${label} must be an object`)
+}
+
 const getCrashLogPath = (): string => {
   // 跨平台获取临时目录
   const tempDir = process.platform === 'win32'
@@ -36,8 +53,8 @@ process.on('uncaughtException', (error) => {
   process.exit(1)
 })
 
-process.on('unhandledRejection', (reason: any) => {
-  const msg = `未处理的 Promise 拒绝: ${reason?.message || reason}\n\nStack: ${reason?.stack || '无堆栈信息'}`
+process.on('unhandledRejection', (reason: unknown) => {
+  const msg = `未处理的 Promise 拒绝: ${getErrorMessage(reason)}\n\nStack: ${getErrorStack(reason) || 'No stack'}`
   log.error('[CRASH]', msg)
   try {
     const crashLogPath = getCrashLogPath()
@@ -282,8 +299,11 @@ async function getPrisma(): Promise<any> {
   return prismaInitPromise
 }
 
-function parseNullableDate(value: any, fieldName: string): Date | null {
+function parseNullableDate(value: unknown, fieldName: string): Date | null {
   if (value === null || value === '' || value === undefined) return null
+  if (!(value instanceof Date) && typeof value !== 'string' && typeof value !== 'number') {
+    throw new Error(`${fieldName} must be a date value`)
+  }
   const parsed = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(parsed.getTime())) {
     throw new Error(`${fieldName} 格式不正确`)
@@ -291,10 +311,13 @@ function parseNullableDate(value: any, fieldName: string): Date | null {
   return parsed
 }
 
-function parseDateRequired(value: any, fieldName: string): Date {
+function parseDateRequired(value: unknown, fieldName: string): Date {
   if (value === null || value === undefined || value === '') {
     throw new Error(`${fieldName} 是必填项`)
   }
+  if (!(value instanceof Date) && typeof value !== 'string' && typeof value !== 'number') {
+    throw new Error(`${fieldName} must be a date value`)
+  }
   const parsed = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(parsed.getTime())) {
     throw new Error(`${fieldName} 格式不正确`)
@@ -302,36 +325,38 @@ function parseDateRequired(value: any, fieldName: string): Date {
   return parsed
 }
 
-function buildInstitutionUpdateData(data: any): Record<string, any> {
-  const updateData: Record<string, any> = {}
+function buildInstitutionUpdateData(data: unknown): JsonRecord {
+  const input = toRecord(data, 'institution update data')
+  const updateData: JsonRecord = {}
 
-  if (data.name !== undefined) updateData.name = data.name
-  if (data.department !== undefined) updateData.department = data.department
-  if (data.tier !== undefined) updateData.tier = data.tier
-  if (data.degreeType !== undefined) updateData.degreeType = data.degreeType
-  if (data.campDeadline !== undefined) updateData.campDeadline = parseNullableDate(data.campDeadline, 'campDeadline')
-  if (data.pushDeadline !== undefined) updateData.pushDeadline = parseNullableDate(data.pushDeadline, 'pushDeadline')
-  if (data.expectedQuota !== undefined) updateData.expectedQuota = data.expectedQuota
-  if (data.policyTags !== undefined) {
-    updateData.policyTags = JSON.stringify(Array.isArray(data.policyTags) ? data.policyTags : [])
+  if (input.name !== undefined) updateData.name = input.name
+  if (input.department !== undefined) updateData.department = input.department
+  if (input.tier !== undefined) updateData.tier = input.tier
+  if (input.degreeType !== undefined) updateData.degreeType = input.degreeType
+  if (input.campDeadline !== undefined) updateData.campDeadline = parseNullableDate(input.campDeadline, 'campDeadline')
+  if (input.pushDeadline !== undefined) updateData.pushDeadline = parseNullableDate(input.pushDeadline, 'pushDeadline')
+  if (input.expectedQuota !== undefined) updateData.expectedQuota = input.expectedQuota
+  if (input.policyTags !== undefined) {
+    updateData.policyTags = JSON.stringify(Array.isArray(input.policyTags) ? input.policyTags : [])
   }
 
   return updateData
 }
 
-function buildAdvisorUpdateData(data: any): Record<string, any> {
-  const updateData: Record<string, any> = {}
+function buildAdvisorUpdateData(data: unknown): JsonRecord {
+  const input = toRecord(data, 'advisor update data')
+  const updateData: JsonRecord = {}
 
-  if (data.institutionId !== undefined) updateData.institutionId = data.institutionId
-  if (data.name !== undefined) updateData.name = data.name
-  if (data.title !== undefined) updateData.title = data.title
-  if (data.researchArea !== undefined) updateData.researchArea = data.researchArea
-  if (data.email !== undefined) updateData.email = data.email
-  if (data.homepage !== undefined) updateData.homepage = data.homepage
-  if (data.contactStatus !== undefined) updateData.contactStatus = data.contactStatus
-  if (data.lastContactDate !== undefined) updateData.lastContactDate = parseNullableDate(data.lastContactDate, 'lastContactDate')
-  if (data.reputationScore !== undefined) updateData.reputationScore = data.reputationScore
-  if (data.notes !== undefined) updateData.notes = data.notes
+  if (input.institutionId !== undefined) updateData.institutionId = input.institutionId
+  if (input.name !== undefined) updateData.name = input.name
+  if (input.title !== undefined) updateData.title = input.title
+  if (input.researchArea !== undefined) updateData.researchArea = input.researchArea
+  if (input.email !== undefined) updateData.email = input.email
+  if (input.homepage !== undefined) updateData.homepage = input.homepage
+  if (input.contactStatus !== undefined) updateData.contactStatus = input.contactStatus
+  if (input.lastContactDate !== undefined) updateData.lastContactDate = parseNullableDate(input.lastContactDate, 'lastContactDate')
+  if (input.reputationScore !== undefined) updateData.reputationScore = input.reputationScore
+  if (input.notes !== undefined) updateData.notes = input.notes
 
   return updateData
 }
@@ -614,9 +639,9 @@ ipcMain.handle('task:update', async (_, id: string, data: any) => {
 
     const result = await client.task.update({ where: { id }, data: updateData })
     return { success: true, data: result, error: null }
-  } catch (error: any) {
+  } catch (error: unknown) {
     log.error('Error updating task:', error)
-    return { success: false, data: null, error: error.message }
+    return { success: false, data: null, error: getErrorMessage(error) }
   }
 })
 
@@ -772,12 +797,12 @@ ipcMain.handle('file:compileLatex', async (_, texPath: string) => {
         }
       })
       proc.on('error', (err) => {
-        resolve({ success: false, error: err.message })
+        resolve({ success: false, error: getErrorMessage(err) })
       })
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     log.error('Error compiling LaTeX:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: getErrorMessage(error) }
   }
 })
 
@@ -793,9 +818,9 @@ ipcMain.handle('emailTemplate:getAll', async () => {
       orderBy: { createdAt: 'asc' }
     })
     return { success: true, data: templates }
-  } catch (error: any) {
+  } catch (error: unknown) {
     log.error('Error fetching email templates:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: getErrorMessage(error) }
   }
 })
 
@@ -810,9 +835,9 @@ ipcMain.handle('emailTemplate:create', async (_, data: any) => {
       }
     })
     return { success: true, data: template }
-  } catch (error: any) {
+  } catch (error: unknown) {
     log.error('Error creating email template:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: getErrorMessage(error) }
   }
 })
 
@@ -829,9 +854,9 @@ ipcMain.handle('emailTemplate:update', async (_, id: string, data: any) => {
       include: { variables: true }
     })
     return { success: true, data: template }
-  } catch (error: any) {
+  } catch (error: unknown) {
     log.error('Error updating email template:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: getErrorMessage(error) }
   }
 })
 
@@ -840,9 +865,9 @@ ipcMain.handle('emailTemplate:delete', async (_, id: string) => {
     const client = await getPrisma()
     await client.emailTemplate.delete({ where: { id } })
     return { success: true }
-  } catch (error: any) {
+  } catch (error: unknown) {
     log.error('Error deleting email template:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: getErrorMessage(error) }
   }
 })
 
@@ -855,9 +880,9 @@ ipcMain.handle('emailVariable:getByTemplate', async (_, templateId: string) => {
       where: { templateId }
     })
     return { success: true, data: variables }
-  } catch (error: any) {
+  } catch (error: unknown) {
     log.error('Error fetching email variables:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: getErrorMessage(error) }
   }
 })
 
@@ -871,9 +896,9 @@ ipcMain.handle('emailVariable:create', async (_, data: any) => {
       }
     })
     return { success: true, data: variable }
-  } catch (error: any) {
+  } catch (error: unknown) {
     log.error('Error creating email variable:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: getErrorMessage(error) }
   }
 })
 
@@ -882,13 +907,23 @@ ipcMain.handle('emailVariable:delete', async (_, id: string) => {
     const client = await getPrisma()
     await client.emailVariable.delete({ where: { id } })
     return { success: true }
-  } catch (error: any) {
+  } catch (error: unknown) {
     log.error('Error deleting email variable:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: getErrorMessage(error) }
   }
 })
 
 // ============== Full Backup Export / Import ==============
+
+async function clearApplicationData(tx: any): Promise<void> {
+  await tx.emailVariable.deleteMany()
+  await tx.emailTemplate.deleteMany()
+  await tx.asset.deleteMany()
+  await tx.interview.deleteMany()
+  await tx.task.deleteMany()
+  await tx.advisor.deleteMany()
+  await tx.institution.deleteMany()
+}
 
 ipcMain.handle('backup:exportAll', async () => {
   try {
@@ -913,19 +948,40 @@ ipcMain.handle('backup:exportAll', async () => {
         emailTemplates
       }
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     log.error('Error exporting backup:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: getErrorMessage(error) }
   }
 })
 
-ipcMain.handle('backup:importAll', async (_, data: any) => {
+ipcMain.handle('backup:clearAll', async () => {
+  try {
+    const client = await getPrisma()
+    await client.$transaction(async (tx: any) => {
+      await clearApplicationData(tx)
+    })
+    return { success: true }
+  } catch (error: unknown) {
+    log.error('Error clearing application data:', error)
+    return { success: false, error: getErrorMessage(error) }
+  }
+})
+
+ipcMain.handle('backup:importAll', async (_, data: any, options?: { mode?: 'replace' | 'append' }) => {
   try {
     const client = await getPrisma()
 
     const counts = { institutions: 0, orphanTasks: 0, emailTemplates: 0 }
+    const hasImportableData = Array.isArray(data?.institutions) || Array.isArray(data?.orphanTasks) || Array.isArray(data?.emailTemplates)
+    if (!hasImportableData) {
+      return { success: false, error: 'Invalid backup data format' }
+    }
 
     await client.$transaction(async (tx: any) => {
+      if (options?.mode !== 'append') {
+        await clearApplicationData(tx)
+      }
+
       // 1. 导入邮件模板及变量（无外键依赖，先导入）
       if (Array.isArray(data.emailTemplates)) {
         for (const tpl of data.emailTemplates) {
@@ -933,7 +989,8 @@ ipcMain.handle('backup:importAll', async (_, data: any) => {
           await tx.emailTemplate.create({ data: { id, ...tplRest } })
           if (Array.isArray(variables)) {
             for (const v of variables) {
-              const { templateId, ...vRest } = v
+              const vRest = { ...v }
+              delete vRest.templateId
               await tx.emailVariable.create({ data: { ...vRest, templateId: id } })
             }
           }
@@ -981,9 +1038,9 @@ ipcMain.handle('backup:importAll', async (_, data: any) => {
     })
 
     return { success: true, data: counts }
-  } catch (error: any) {
+  } catch (error: unknown) {
     log.error('Error importing backup:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: getErrorMessage(error) }
   }
 })
 
@@ -1042,13 +1099,14 @@ app.whenReady().then(async () => {
         await client.emailTemplate.deleteMany({ where: { id: { in: duplicateIds } } })
         log.info(`[Cleanup] Removed ${duplicateIds.length} duplicate email templates`)
       }
-    } catch (err: any) {
-      log.warn('[Cleanup] Failed to deduplicate email templates:', err?.message)
+    } catch (err: unknown) {
+      log.warn('[Cleanup] Failed to deduplicate email templates:', getErrorMessage(err))
     }
-  } catch (error: any) {
-    const msg = `数据库初始化失败: ${error?.message}\n\nStack: ${error?.stack || '无堆栈'}`
+  } catch (error: unknown) {
+    const msg = `数据库初始化失败: ${getErrorMessage(error)}\n\nStack: ${getErrorStack(error) || 'No stack'}`
     log.error(msg)
     dialog.showErrorBox('PG-Tracker 启动失败', msg)
+    app.quit()
     return // 初始化失败时不创建窗口，直接退出
   }
 
@@ -1070,8 +1128,8 @@ ipcMain.handle('update:check', async () => {
   try {
     const result = await autoUpdater.checkForUpdates()
     return { success: true, data: result }
-  } catch (error: any) {
-    return { success: false, error: error.message }
+  } catch (error: unknown) {
+    return { success: false, error: getErrorMessage(error) }
   }
 })
 
@@ -1079,8 +1137,8 @@ ipcMain.handle('update:download', async () => {
   try {
     await autoUpdater.downloadUpdate()
     return { success: true }
-  } catch (error: any) {
-    return { success: false, error: error.message }
+  } catch (error: unknown) {
+    return { success: false, error: getErrorMessage(error) }
   }
 })
 

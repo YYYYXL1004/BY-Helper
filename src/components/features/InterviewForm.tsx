@@ -8,6 +8,7 @@
  */
 import { useState } from 'react'
 import { useStore, Interview } from '../../stores/appStore'
+import { getErrorMessage } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
@@ -42,7 +43,7 @@ export default function InterviewForm({ advisorId, onClose }: InterviewFormProps
       onClose()
     } catch (error) {
       console.error('Failed to save interview:', error)
-      alert('保存失败：' + (error as Error).message)
+      alert('保存失败：' + getErrorMessage(error))
     }
     finally { setIsSubmitting(false) }
   }

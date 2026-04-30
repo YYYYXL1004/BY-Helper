@@ -63,6 +63,23 @@ export interface Interview {
   markdownNotes: string
 }
 
+export interface EmailVariable {
+  id: string
+  name: string
+  templateId: string
+  createdAt?: string
+}
+
+export interface EmailTemplate {
+  id: string
+  name: string
+  subject: string
+  content: string
+  createdAt?: string
+  updatedAt?: string
+  variables?: EmailVariable[]
+}
+
 export interface InstitutionInput {
   name: string
   department: string
@@ -107,6 +124,10 @@ export interface InterviewInput {
 
 type View = 'dashboard' | 'kanban' | 'timeline' | 'templates' | 'settings'
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 interface AppState {
   currentView: View
   selectedInstitutionId: string | null
@@ -115,7 +136,7 @@ interface AppState {
   isLoading: boolean
   error: string | null
   conflictWarnings: string[]
-  emailTemplates: any[]
+  emailTemplates: EmailTemplate[]
   setView: (view: View) => void
   setSelectedInstitutionId: (id: string | null) => void
   loadInstitutions: () => Promise<void>
@@ -137,10 +158,10 @@ interface AppState {
   checkConflicts: (institutionId: string) => Promise<void>
   clearError: () => void
   loadEmailTemplates: () => Promise<void>
-  createEmailTemplate: (data: { name: string; subject: string; content: string }) => Promise<any>
-  updateEmailTemplate: (id: string, data: { name: string; subject: string; content: string }) => Promise<any>
+  createEmailTemplate: (data: { name: string; subject: string; content: string }) => Promise<EmailTemplate>
+  updateEmailTemplate: (id: string, data: { name: string; subject: string; content: string }) => Promise<EmailTemplate>
   deleteEmailTemplate: (id: string) => Promise<void>
-  createEmailVariable: (data: { name: string; templateId: string }) => Promise<any>
+  createEmailVariable: (data: { name: string; templateId: string }) => Promise<EmailVariable>
   deleteEmailVariable: (id: string) => Promise<void>
 }
 
@@ -162,8 +183,8 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const data = await window.api.institution.getAll()
       set({ institutions: data, isLoading: false })
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error), isLoading: false })
     }
   },
 
@@ -171,8 +192,8 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const tasks = await window.api.task.getOrphan()
       set({ orphanTasks: tasks })
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
     }
   },
 
@@ -183,8 +204,8 @@ export const useStore = create<AppState>((set, get) => ({
       const institutions = await window.api.institution.getAll()
       set({ institutions, isLoading: false })
       return institutions.find((i) => i.id === newInstitution.id) || newInstitution
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error), isLoading: false })
       throw error
     }
   },
@@ -196,8 +217,8 @@ export const useStore = create<AppState>((set, get) => ({
       const institutions = await window.api.institution.getAll()
       set({ institutions, isLoading: false })
       return institutions.find((i) => i.id === id) || updated
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error), isLoading: false })
       throw error
     }
   },
@@ -210,8 +231,8 @@ export const useStore = create<AppState>((set, get) => ({
         institutions: state.institutions.filter((i) => i.id !== id),
         isLoading: false
       }))
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error), isLoading: false })
       throw error
     }
   },
@@ -221,8 +242,8 @@ export const useStore = create<AppState>((set, get) => ({
       const newAdvisor = await window.api.advisor.create(data)
       await get().loadInstitutions()
       return newAdvisor
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
       throw error
     }
   },
@@ -231,8 +252,8 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await window.api.advisor.update(id, data)
       await get().loadInstitutions()
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
       throw error
     }
   },
@@ -241,8 +262,8 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await window.api.advisor.delete(id)
       await get().loadInstitutions()
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
       throw error
     }
   },
@@ -255,8 +276,8 @@ export const useStore = create<AppState>((set, get) => ({
         await get().loadOrphanTasks()
       }
       return newTask
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
       throw error
     }
   },
@@ -269,8 +290,9 @@ export const useStore = create<AppState>((set, get) => ({
         throw new Error(result.error || '更新任务失败')
       }
       await get().loadInstitutions()
-    } catch (error: any) {
-      set({ error: error.message })
+      await get().loadOrphanTasks()
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
       throw error
     }
   },
@@ -279,8 +301,9 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await window.api.task.delete(id)
       await get().loadInstitutions()
-    } catch (error: any) {
-      set({ error: error.message })
+      await get().loadOrphanTasks()
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
       throw error
     }
   },
@@ -290,8 +313,8 @@ export const useStore = create<AppState>((set, get) => ({
       const asset = await window.api.asset.create(data)
       await get().loadInstitutions()
       return asset
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
       throw error
     }
   },
@@ -300,8 +323,8 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await window.api.asset.delete(id)
       await get().loadInstitutions()
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
       throw error
     }
   },
@@ -311,8 +334,8 @@ export const useStore = create<AppState>((set, get) => ({
       const interview = await window.api.interview.create(data)
       await get().loadInstitutions()
       return interview
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
       throw error
     }
   },
@@ -321,8 +344,8 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await window.api.interview.update(id, data)
       await get().loadInstitutions()
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
       throw error
     }
   },
@@ -331,8 +354,8 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await window.api.interview.delete(id)
       await get().loadInstitutions()
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
       throw error
     }
   },
@@ -341,8 +364,8 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const warnings = await window.api.advisor.getConflictWarnings(institutionId)
       set({ conflictWarnings: warnings })
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
     }
   },
 
@@ -357,8 +380,8 @@ export const useStore = create<AppState>((set, get) => ({
       }
       // data is the array of templates with their variables
       set({ emailTemplates: result.data })
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
     }
   },
 
@@ -369,10 +392,13 @@ export const useStore = create<AppState>((set, get) => ({
         set({ error: result.error })
         throw new Error(result.error)
       }
+      if (!result.data) {
+        throw new Error('Email template response missing data')
+      }
       await get().loadEmailTemplates()
       return result.data
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
       throw error
     }
   },
@@ -384,10 +410,13 @@ export const useStore = create<AppState>((set, get) => ({
         set({ error: result.error })
         throw new Error(result.error)
       }
+      if (!result.data) {
+        throw new Error('Email template response missing data')
+      }
       await get().loadEmailTemplates()
       return result.data
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
       throw error
     }
   },
@@ -400,8 +429,8 @@ export const useStore = create<AppState>((set, get) => ({
         throw new Error(result.error)
       }
       await get().loadEmailTemplates()
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
       throw error
     }
   },
@@ -413,10 +442,13 @@ export const useStore = create<AppState>((set, get) => ({
         set({ error: result.error })
         throw new Error(result.error)
       }
+      if (!result.data) {
+        throw new Error('Email variable response missing data')
+      }
       await get().loadEmailTemplates()
       return result.data
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
       throw error
     }
   },
@@ -429,8 +461,8 @@ export const useStore = create<AppState>((set, get) => ({
         throw new Error(result.error)
       }
       await get().loadEmailTemplates()
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
       throw error
     }
   }

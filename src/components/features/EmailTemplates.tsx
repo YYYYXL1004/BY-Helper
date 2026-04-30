@@ -20,6 +20,20 @@ const VARIABLE_POOL = [
   'YOUR_PROJECTS', 'YOUR_CONTACT', 'ACHIEVEMENTS'
 ]
 
+interface EmailVariable {
+  id: string
+  name: string
+  templateId: string
+}
+
+interface EmailTemplate {
+  id: string
+  name: string
+  subject: string
+  content: string
+  variables: EmailVariable[]
+}
+
 const defaultTemplates = [
   {
     id: 'self-intro', name: '自荐信',
@@ -94,7 +108,7 @@ function renderPreviewText(text: string, fillValues: Record<string, string>): st
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
   return escaped
-    .replace(/\{\{\s*(.+?)\s*\}\}/g, (_match, varName) => {
+    .replace(/\{\{\s*(.+?)\s*\}\}/g, (_match: string, varName: string) => {
       const key = varName.trim()
       const filled = fillValues[key]
       if (filled) {
@@ -110,7 +124,7 @@ const STORAGE_KEY = 'pgTrackerEmailFillValues'
 export default function EmailTemplates(): JSX.Element {
   const { emailTemplates, loadEmailTemplates, createEmailTemplate, updateEmailTemplate, deleteEmailTemplate, error } = useStore()
 
-  const [selectedTemplate, setSelectedTemplate] = useState<any | null>(null)
+  const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplate | null>(null)
   const [editedName, setEditedName] = useState('')
   const [editedSubject, setEditedSubject] = useState('')
   const [editedContent, setEditedContent] = useState('')
@@ -163,13 +177,13 @@ export default function EmailTemplates(): JSX.Element {
     }
     init()
     return () => { cancelled = true }
-  }, [])
+  }, [createEmailTemplate, loadEmailTemplates])
 
   const templates = emailTemplates.length > 0
-    ? emailTemplates
-    : defaultTemplates.map(t => ({ ...t, variables: t.variables.map((v: string) => ({ id: v, name: v, templateId: t.id })) }))
+    ? emailTemplates as EmailTemplate[]
+    : defaultTemplates.map(t => ({ ...t, variables: t.variables.map((v: string) => ({ id: v, name: v, templateId: t.id })) })) as EmailTemplate[]
 
-  const handleSelectTemplate = (template: any): void => {
+  const handleSelectTemplate = (template: EmailTemplate): void => {
     setSelectedTemplate(template)
     setEditedName(template.name)
     setEditedSubject(template.subject)
@@ -184,12 +198,12 @@ export default function EmailTemplates(): JSX.Element {
     try {
       await updateEmailTemplate(selectedTemplate.id, { name: editedName, subject: editedSubject, content: editedContent })
       await loadEmailTemplates()
-      const latest = useStore.getState().emailTemplates.find((t: any) => t.id === selectedTemplate.id)
+      const latest = (useStore.getState().emailTemplates as EmailTemplate[]).find((t) => t.id === selectedTemplate.id)
       if (latest) setSelectedTemplate(latest)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
-    } catch (err: any) {
-      alert('保存失败：' + (err?.message || '未知错误'))
+    } catch (err: unknown) {
+      alert('保存失败：' + (err instanceof Error ? err.message : '未知错误'))
     }
   }
 
@@ -245,7 +259,7 @@ export default function EmailTemplates(): JSX.Element {
       const result = await createEmailTemplate({ name: newTemplateName.trim(), subject: '邮件主题', content: '邮件内容...' })
       await loadEmailTemplates()
       if (result && result.id) {
-        const created = useStore.getState().emailTemplates.find((t: any) => t.id === result.id)
+        const created = (useStore.getState().emailTemplates as EmailTemplate[]).find((t) => t.id === result.id)
         if (created) handleSelectTemplate(created)
       }
       setNewTemplateName('')
@@ -305,7 +319,7 @@ export default function EmailTemplates(): JSX.Element {
               </div>
             )}
             <div className="space-y-1 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 260px)' }}>
-              {templates.map((template: any) => (
+              {templates.map((template) => (
                 <div key={template.id} onClick={() => handleSelectTemplate(template)}
                   className={`group flex items-center justify-between px-3 py-2 rounded-md cursor-pointer transition-all text-sm ${
                     selectedTemplate?.id === template.id

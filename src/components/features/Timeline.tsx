@@ -16,7 +16,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '.
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { ConfirmDialog } from '../ui/confirm-dialog'
-import { formatDateSafe, parseValidDate } from '../../lib/utils'
+import { formatDateSafe, getErrorMessage, parseValidDate } from '../../lib/utils'
 
 interface TimelineProps {
   institutions: Institution[]
@@ -55,7 +55,7 @@ export default function Timeline({ institutions }: TimelineProps): JSX.Element {
   }, [orphanTasks])
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  useEffect(() => { loadOrphanTasks() }, [])
+  useEffect(() => { loadOrphanTasks() }, [loadOrphanTasks])
 
   // 使用 useMemo 优化性能，避免每帧重算
   const timelineEvents = useMemo(() => {
@@ -146,15 +146,18 @@ export default function Timeline({ institutions }: TimelineProps): JSX.Element {
 
     // 2. 直接调 IPC 更新数据库（不走 store 的 updateTask，避免 reloadInstitutions 刷掉 orphanTasks）
     window.api.task.update(taskId, { isCompleted: newCompleted })
-      .then(() => {
+      .then((result) => {
+        if (!result.success) {
+          throw new Error(result.error || '更新失败')
+        }
         // 3. 数据库更新成功后，同步刷新 store 的 orphanTasks
         loadOrphanTasks()
       })
-      .catch((err: any) => {
+      .catch((err: unknown) => {
         console.error('任务状态更新失败，回滚 UI', err)
         // 4. 失败回滚到之前的状态
         setOrphanTaskCompletion(prev => ({ ...prev, [taskId]: currentCompleted }))
-        alert('更新失败：' + (err?.message || '未知错误'))
+        alert('更新失败：' + getErrorMessage(err))
       })
   }
 
@@ -176,7 +179,11 @@ export default function Timeline({ institutions }: TimelineProps): JSX.Element {
 
   const handleSaveEdit = async (): Promise<void> => {
     if (!editingTask || !editTitle.trim() || !editDate) return
-    await window.api.task.update(editingTask.id, { title: editTitle.trim(), dueDate: new Date(editDate) })
+    const result = await window.api.task.update(editingTask.id, { title: editTitle.trim(), dueDate: new Date(editDate) })
+    if (!result.success) {
+      alert('保存失败：' + (result.error || '未知错误'))
+      return
+    }
     setEditingTask(null)
     await loadOrphanTasks()
   }

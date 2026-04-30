@@ -7,12 +7,40 @@
  * Copyright (c) 2026. All rights reserved.
  */
 import { ElectronAPI } from '@electron-toolkit/preload'
+import type {
+  Advisor,
+  AdvisorInput,
+  Asset,
+  EmailTemplate,
+  EmailVariable,
+  Institution,
+  InstitutionInput,
+  Interview,
+  InterviewInput,
+  Task,
+  TaskInput,
+  TaskUpdate
+} from './stores/appStore'
 
 /** 统一的 API 响应格式 */
-interface ApiResponse<T = any> {
+interface ApiResponse<T = unknown> {
   success: boolean
   data?: T
   error?: string
+}
+
+interface FileSelectOptions {
+  title?: string
+  filters?: Array<{ name: string; extensions: string[] }>
+  properties?: Array<'openFile' | 'openDirectory' | 'multiSelections'>
+}
+
+interface BackupData {
+  version?: string
+  exportedAt?: string
+  institutions?: Institution[]
+  orphanTasks?: Task[]
+  emailTemplates?: EmailTemplate[]
 }
 
 interface CustomAPI {
@@ -20,54 +48,55 @@ interface CustomAPI {
     getVersion: () => Promise<string>
   }
   institution: {
-    getAll: () => Promise<any[]>
-    getById: (id: string) => Promise<any>
-    create: (data: any) => Promise<any>
-    update: (id: string, data: any) => Promise<any>
+    getAll: () => Promise<Institution[]>
+    getById: (id: string) => Promise<Institution | null>
+    create: (data: InstitutionInput) => Promise<Institution>
+    update: (id: string, data: Partial<InstitutionInput>) => Promise<Institution>
     delete: (id: string) => Promise<boolean>
   }
   advisor: {
-    getByInstitution: (institutionId: string) => Promise<any[]>
-    create: (data: any) => Promise<any>
-    update: (id: string, data: any) => Promise<any>
+    getByInstitution: (institutionId: string) => Promise<Advisor[]>
+    create: (data: AdvisorInput) => Promise<Advisor>
+    update: (id: string, data: Partial<AdvisorInput>) => Promise<Advisor>
     delete: (id: string) => Promise<boolean>
     getConflictWarnings: (institutionId: string) => Promise<string[]>
   }
   task: {
-    getByInstitution: (institutionId: string) => Promise<any[]>
-    getOrphan: () => Promise<any[]>
-    create: (data: any) => Promise<any>
-    update: (id: string, data: any) => Promise<ApiResponse>
+    getByInstitution: (institutionId: string) => Promise<Task[]>
+    getOrphan: () => Promise<Task[]>
+    create: (data: TaskInput) => Promise<Task>
+    update: (id: string, data: TaskUpdate) => Promise<ApiResponse<Task>>
     delete: (id: string) => Promise<boolean>
   }
   asset: {
-    create: (data: any) => Promise<any>
+    create: (data: Omit<Asset, 'id'>) => Promise<Asset>
     delete: (id: string) => Promise<boolean>
   }
   interview: {
-    create: (data: any) => Promise<any>
-    update: (id: string, data: any) => Promise<any>
+    create: (data: InterviewInput) => Promise<Interview>
+    update: (id: string, data: Partial<InterviewInput>) => Promise<Interview>
     delete: (id: string) => Promise<boolean>
   }
   file: {
-    selectFile: (options?: any) => Promise<string | null>
+    selectFile: (options?: FileSelectOptions) => Promise<string | null>
     openExternal: (path: string) => Promise<boolean>
     compileLatex: (texPath: string) => Promise<{ success: boolean; stdout?: string; stderr?: string; error?: string }>
   }
   emailTemplate: {
-    getAll: () => Promise<ApiResponse<any[]>>
-    create: (data: any) => Promise<ApiResponse>
-    update: (id: string, data: any) => Promise<ApiResponse>
+    getAll: () => Promise<ApiResponse<EmailTemplate[]>>
+    create: (data: { name: string; subject: string; content: string }) => Promise<ApiResponse<EmailTemplate>>
+    update: (id: string, data: { name: string; subject: string; content: string }) => Promise<ApiResponse<EmailTemplate>>
     delete: (id: string) => Promise<ApiResponse>
   }
   emailVariable: {
-    getByTemplate: (templateId: string) => Promise<ApiResponse<any[]>>
-    create: (data: any) => Promise<ApiResponse>
+    getByTemplate: (templateId: string) => Promise<ApiResponse<EmailVariable[]>>
+    create: (data: { name: string; templateId: string }) => Promise<ApiResponse<EmailVariable>>
     delete: (id: string) => Promise<ApiResponse>
   }
   backup: {
-    exportAll: () => Promise<ApiResponse<{ version: string; exportedAt: string; institutions: any[]; orphanTasks: any[]; emailTemplates: any[] }>>
-    importAll: (data: any) => Promise<ApiResponse<{ institutions: number; orphanTasks: number; emailTemplates: number }>>
+    exportAll: () => Promise<ApiResponse<{ version: string; exportedAt: string; institutions: Institution[]; orphanTasks: Task[]; emailTemplates: EmailTemplate[] }>>
+    clearAll: () => Promise<ApiResponse>
+    importAll: (data: BackupData, options?: { mode?: 'replace' | 'append' }) => Promise<ApiResponse<{ institutions: number; orphanTasks: number; emailTemplates: number }>>
   }
   updater: {
     check: () => Promise<ApiResponse>
@@ -90,3 +119,5 @@ declare global {
     api: CustomAPI
   }
 }
+
+export {}

@@ -76,8 +76,8 @@ export default function InstitutionForm({ institution, onClose, onSuccess }: Ins
         ? await updateInstitution(institution.id, data)
         : await addInstitution(data)
       onSuccess(savedInstitution)
-    } catch (error: any) {
-      const msg = error?.message || '保存失败，请重试'
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : '保存失败，请重试'
       setSubmitError(msg)
       console.error('Failed to save institution:', error)
     } finally {

@@ -8,6 +8,7 @@
  */
 import { useState } from 'react'
 import { useStore, Advisor } from '../../stores/appStore'
+import { getErrorMessage } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
@@ -66,7 +67,7 @@ export default function AdvisorForm({ institutionId, advisor, onClose }: Advisor
       onClose()
     } catch (error) {
       console.error('Failed to save advisor:', error)
-      alert('保存失败：' + (error as Error).message)
+      alert('保存失败：' + getErrorMessage(error))
     }
     finally { setIsSubmitting(false) }
   }

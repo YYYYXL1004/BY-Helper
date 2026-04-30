@@ -4,7 +4,7 @@ productName: PG-Tracker
 publish:
   provider: github
   owner: Jensenyjc
-  repo: pg-tracker-v2
+  repo: PG-tracker
 
 directories:
   buildResources: build

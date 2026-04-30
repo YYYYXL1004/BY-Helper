@@ -32,18 +32,25 @@ export function useUpdater() {
     setChecking(true)
     setStatus({ phase: 'checking' })
     try {
-      await window.api.updater.check()
-    } catch (err: any) {
-      setStatus({ phase: 'error', error: err.message })
+      const result = await window.api.updater.check()
+      if (!result.success) {
+        setStatus({ phase: 'error', error: result.error || '检查更新失败' })
+        setChecking(false)
+      }
+    } catch (err: unknown) {
+      setStatus({ phase: 'error', error: err instanceof Error ? err.message : '未知错误' })
       setChecking(false)
     }
   }, [])
 
   const downloadUpdate = useCallback(async () => {
     try {
-      await window.api.updater.download()
-    } catch (err: any) {
-      setStatus({ phase: 'error', error: err.message })
+      const result = await window.api.updater.download()
+      if (!result.success) {
+        setStatus({ phase: 'error', error: result.error || '下载更新失败' })
+      }
+    } catch (err: unknown) {
+      setStatus({ phase: 'error', error: err instanceof Error ? err.message : '未知错误' })
     }
   }, [])
 

@@ -233,13 +233,26 @@ describe('appStore — tasks', () => {
     await expect(useStore.getState().updateTask('t1', { title: 'x' })).rejects.toThrow('日期格式错误')
   })
 
+  it('updateTask reloads institutions and orphanTasks on success', async () => {
+    mockApi.task.update.mockResolvedValueOnce({ success: true, data: { id: 't1' }, error: null })
+    mockApi.institution.getAll.mockResolvedValueOnce([])
+    mockApi.task.getOrphan.mockResolvedValueOnce([])
+
+    await useStore.getState().updateTask('t1', { title: 'x' })
+
+    expect(mockApi.institution.getAll).toHaveBeenCalled()
+    expect(mockApi.task.getOrphan).toHaveBeenCalled()
+  })
+
   it('deleteTask reloads institutions', async () => {
     mockApi.task.delete.mockResolvedValueOnce(undefined)
     mockApi.institution.getAll.mockResolvedValueOnce([])
+    mockApi.task.getOrphan.mockResolvedValueOnce([])
 
     await useStore.getState().deleteTask('t1')
 
     expect(mockApi.institution.getAll).toHaveBeenCalled()
+    expect(mockApi.task.getOrphan).toHaveBeenCalled()
   })
 })
 

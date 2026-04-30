@@ -9,7 +9,7 @@
 import { useMemo, useEffect } from 'react'
 import { isPast, differenceInDays } from 'date-fns'
 import { Calendar, TrendingUp, Users, CheckCircle2, Clock, ArrowRight, List } from 'lucide-react'
-import { useStore, Institution } from '../../stores/appStore'
+import { useStore, Institution, Task } from '../../stores/appStore'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Button } from '../ui/button'
 import { formatDateSafe, parseValidDate } from '../../lib/utils'
@@ -17,7 +17,7 @@ import { formatDateSafe, parseValidDate } from '../../lib/utils'
 export default function Dashboard(): JSX.Element {
   const { institutions, orphanTasks, loadOrphanTasks, setView, setSelectedInstitutionId } = useStore()
 
-  useEffect(() => { loadOrphanTasks() }, [])
+  useEffect(() => { loadOrphanTasks() }, [loadOrphanTasks])
 
   const stats = useMemo(() => {
     const total = institutions.length
@@ -53,7 +53,7 @@ export default function Dashboard(): JSX.Element {
 
   // 所有未完成任务（院校任务 + 独立任务）
   const allPendingTasks = useMemo(() => {
-    const items: { institution: Institution | null; task: any }[] = []
+    const items: { institution: Institution | null; task: Task }[] = []
     for (const inst of institutions) {
       for (const task of inst.tasks || []) {
         if (!task.isCompleted) {
