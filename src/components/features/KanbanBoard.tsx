@@ -7,7 +7,7 @@
  * Copyright (c) 2026. All rights reserved.
  */
 import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { GripVertical, Plus } from 'lucide-react'
 import { useStore, Institution } from '../../stores/appStore'
 import InstitutionCard from './InstitutionCard'
 import InstitutionForm from './InstitutionForm'
@@ -25,10 +25,11 @@ const tierConfig = {
 }
 
 export default function KanbanBoard({ onSelectInstitution }: KanbanBoardProps): JSX.Element {
-  const { institutions } = useStore()
+  const { institutions, reorderInstitutions } = useStore()
   const [showForm, setShowForm] = useState(false)
   const [editingInstitution, setEditingInstitution] = useState<Institution | null>(null)
   const [activeTab, setActiveTab] = useState('all')
+  const [draggedInstitution, setDraggedInstitution] = useState<{ id: string; tier: Institution['tier'] } | null>(null)
 
   const reachSchools = institutions.filter((i) => i.tier === 'REACH')
   const matchSchools = institutions.filter((i) => i.tier === 'MATCH')
@@ -37,6 +38,20 @@ export default function KanbanBoard({ onSelectInstitution }: KanbanBoardProps): 
   const handleEdit = (institution: Institution): void => {
     setEditingInstitution(institution)
     setShowForm(true)
+  }
+
+  const handleInstitutionDrop = async (tier: Institution['tier'], targetId: string | null): Promise<void> => {
+    if (!draggedInstitution || draggedInstitution.tier !== tier) return
+
+    const currentIds = institutions.filter((institution) => institution.tier === tier).map((institution) => institution.id)
+    if (!currentIds.includes(draggedInstitution.id)) return
+
+    const nextIds = currentIds.filter((id) => id !== draggedInstitution.id)
+    const targetIndex = targetId ? nextIds.indexOf(targetId) : nextIds.length
+    nextIds.splice(targetIndex >= 0 ? targetIndex : nextIds.length, 0, draggedInstitution.id)
+
+    if (nextIds.join('|') === currentIds.join('|')) return
+    await reorderInstitutions(nextIds)
   }
 
   return (
@@ -65,20 +80,20 @@ export default function KanbanBoard({ onSelectInstitution }: KanbanBoardProps): 
 
           <TabsContent value="all" className="flex-1 overflow-auto p-4">
             <div className="grid grid-cols-3 gap-4 h-full">
-              <KanbanColumn tier="REACH" schools={reachSchools} config={tierConfig.REACH} onSelect={onSelectInstitution} onEdit={handleEdit} />
-              <KanbanColumn tier="MATCH" schools={matchSchools} config={tierConfig.MATCH} onSelect={onSelectInstitution} onEdit={handleEdit} />
-              <KanbanColumn tier="SAFETY" schools={safetySchools} config={tierConfig.SAFETY} onSelect={onSelectInstitution} onEdit={handleEdit} />
+              <KanbanColumn tier="REACH" schools={reachSchools} config={tierConfig.REACH} onSelect={onSelectInstitution} onEdit={handleEdit} draggedId={draggedInstitution?.id ?? null} onDragStart={setDraggedInstitution} onDragEnd={() => setDraggedInstitution(null)} onDropInstitution={handleInstitutionDrop} />
+              <KanbanColumn tier="MATCH" schools={matchSchools} config={tierConfig.MATCH} onSelect={onSelectInstitution} onEdit={handleEdit} draggedId={draggedInstitution?.id ?? null} onDragStart={setDraggedInstitution} onDragEnd={() => setDraggedInstitution(null)} onDropInstitution={handleInstitutionDrop} />
+              <KanbanColumn tier="SAFETY" schools={safetySchools} config={tierConfig.SAFETY} onSelect={onSelectInstitution} onEdit={handleEdit} draggedId={draggedInstitution?.id ?? null} onDragStart={setDraggedInstitution} onDragEnd={() => setDraggedInstitution(null)} onDropInstitution={handleInstitutionDrop} />
             </div>
           </TabsContent>
 
           <TabsContent value="reach" className="flex-1 overflow-auto p-4">
-            <KanbanColumn tier="REACH" schools={reachSchools} config={tierConfig.REACH} onSelect={onSelectInstitution} onEdit={handleEdit} fullHeight />
+            <KanbanColumn tier="REACH" schools={reachSchools} config={tierConfig.REACH} onSelect={onSelectInstitution} onEdit={handleEdit} fullHeight draggedId={draggedInstitution?.id ?? null} onDragStart={setDraggedInstitution} onDragEnd={() => setDraggedInstitution(null)} onDropInstitution={handleInstitutionDrop} />
           </TabsContent>
           <TabsContent value="match" className="flex-1 overflow-auto p-4">
-            <KanbanColumn tier="MATCH" schools={matchSchools} config={tierConfig.MATCH} onSelect={onSelectInstitution} onEdit={handleEdit} fullHeight />
+            <KanbanColumn tier="MATCH" schools={matchSchools} config={tierConfig.MATCH} onSelect={onSelectInstitution} onEdit={handleEdit} fullHeight draggedId={draggedInstitution?.id ?? null} onDragStart={setDraggedInstitution} onDragEnd={() => setDraggedInstitution(null)} onDropInstitution={handleInstitutionDrop} />
           </TabsContent>
           <TabsContent value="safety" className="flex-1 overflow-auto p-4">
-            <KanbanColumn tier="SAFETY" schools={safetySchools} config={tierConfig.SAFETY} onSelect={onSelectInstitution} onEdit={handleEdit} fullHeight />
+            <KanbanColumn tier="SAFETY" schools={safetySchools} config={tierConfig.SAFETY} onSelect={onSelectInstitution} onEdit={handleEdit} fullHeight draggedId={draggedInstitution?.id ?? null} onDragStart={setDraggedInstitution} onDragEnd={() => setDraggedInstitution(null)} onDropInstitution={handleInstitutionDrop} />
           </TabsContent>
         </Tabs>
       </div>
@@ -104,10 +119,14 @@ interface KanbanColumnProps {
   config: { label: string; color: string; borderColor: string }
   onSelect: (id: string) => void
   onEdit: (institution: Institution) => void
+  draggedId: string | null
+  onDragStart: (institution: { id: string; tier: Institution['tier'] }) => void
+  onDragEnd: () => void
+  onDropInstitution: (tier: Institution['tier'], targetId: string | null) => Promise<void>
   fullHeight?: boolean
 }
 
-function KanbanColumn({ tier, schools, config, onSelect, onEdit, fullHeight }: KanbanColumnProps): JSX.Element {
+function KanbanColumn({ tier, schools, config, onSelect, onEdit, draggedId, onDragStart, onDragEnd, onDropInstitution, fullHeight }: KanbanColumnProps): JSX.Element {
   const tierLabels = { REACH: '冲', MATCH: '稳', SAFETY: '保' }
   const tierDescs = { REACH: '超出自身水平，但值得一试', MATCH: '匹配自身水平', SAFETY: '保底选择' }
 
@@ -119,9 +138,34 @@ function KanbanColumn({ tier, schools, config, onSelect, onEdit, fullHeight }: K
         </h3>
         <p className="text-xs text-muted-foreground mt-0.5">{tierDescs[tier]}</p>
       </div>
-      <div className="flex-1 p-2 space-y-2 overflow-auto">
+      <div
+        className="flex-1 p-2 space-y-2 overflow-auto"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault()
+          void onDropInstitution(tier, null)
+        }}
+      >
         {schools.map((school) => (
-          <InstitutionCard key={school.id} institution={school} onClick={() => onSelect(school.id)} onEdit={() => onEdit(school)} />
+          <div
+            key={school.id}
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = 'move'
+              onDragStart({ id: school.id, tier })
+            }}
+            onDragEnd={onDragEnd}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              void onDropInstitution(tier, school.id)
+            }}
+            className={`group relative ${draggedId === school.id ? 'opacity-50' : ''}`}
+          >
+            <GripVertical className="absolute right-2 top-2 h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 pointer-events-none" />
+            <InstitutionCard institution={school} onClick={() => onSelect(school.id)} onEdit={() => onEdit(school)} />
+          </div>
         ))}
         {schools.length === 0 && (
           <div className="text-center py-8 text-muted-foreground text-sm">暂无院校</div>

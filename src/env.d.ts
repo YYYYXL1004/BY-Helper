@@ -53,6 +53,7 @@ interface CustomAPI {
     create: (data: InstitutionInput) => Promise<Institution>
     update: (id: string, data: Partial<InstitutionInput>) => Promise<Institution>
     delete: (id: string) => Promise<boolean>
+    reorder: (orderedIds: string[]) => Promise<ApiResponse>
   }
   advisor: {
     getByInstitution: (institutionId: string) => Promise<Advisor[]>
@@ -60,6 +61,7 @@ interface CustomAPI {
     update: (id: string, data: Partial<AdvisorInput>) => Promise<Advisor>
     delete: (id: string) => Promise<boolean>
     getConflictWarnings: (institutionId: string) => Promise<string[]>
+    reorder: (orderedIds: string[]) => Promise<ApiResponse>
   }
   task: {
     getByInstitution: (institutionId: string) => Promise<Task[]>

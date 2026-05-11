@@ -8,12 +8,14 @@ const mockApi = {
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
+    reorder: vi.fn(),
   },
   advisor: {
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
     getConflictWarnings: vi.fn(),
+    reorder: vi.fn(),
   },
   task: {
     getOrphan: vi.fn(),
@@ -166,6 +168,32 @@ describe('appStore — updateInstitution', () => {
   })
 })
 
+describe('appStore — reorderInstitutions', () => {
+  it('persists the requested institution order and reloads institutions', async () => {
+    const order = ['inst-2', 'inst-1', 'inst-3']
+    const reloaded = [
+      { id: 'inst-2', name: '北大', department: 'CS', tier: 'REACH', sortOrder: 0 },
+      { id: 'inst-1', name: '清华', department: 'CS', tier: 'REACH', sortOrder: 1 },
+      { id: 'inst-3', name: '复旦', department: 'CS', tier: 'REACH', sortOrder: 2 },
+    ]
+    mockApi.institution.reorder.mockResolvedValueOnce({ success: true })
+    mockApi.institution.getAll.mockResolvedValueOnce(reloaded)
+
+    await useStore.getState().reorderInstitutions(order)
+
+    expect(mockApi.institution.reorder).toHaveBeenCalledWith(order)
+    expect(mockApi.institution.getAll).toHaveBeenCalled()
+    expect(useStore.getState().institutions).toEqual(reloaded)
+  })
+
+  it('throws and sets error when institution reorder fails', async () => {
+    mockApi.institution.reorder.mockResolvedValueOnce({ success: false, error: '排序失败' })
+
+    await expect(useStore.getState().reorderInstitutions(['inst-1'])).rejects.toThrow('排序失败')
+    expect(useStore.getState().error).toBe('排序失败')
+  })
+})
+
 describe('appStore — deleteInstitution', () => {
   it('removes from local state without refetching all', async () => {
     useStore.setState({ institutions: [{ id: '1', name: '清华', department: 'CS', tier: 'REACH', degreeType: 'MASTER', campDeadline: null, pushDeadline: null, expectedQuota: null, policyTags: '[]', createdAt: '', updatedAt: '' }] })
@@ -201,6 +229,26 @@ describe('appStore — updateAdvisor', () => {
 
     expect(mockApi.advisor.update).toHaveBeenCalledWith('a1', { contactStatus: 'REPLIED' })
     expect(mockApi.institution.getAll).toHaveBeenCalled()
+  })
+})
+
+describe('appStore — reorderAdvisors', () => {
+  it('persists the requested advisor order and reloads institutions', async () => {
+    const order = ['advisor-2', 'advisor-1']
+    mockApi.advisor.reorder.mockResolvedValueOnce({ success: true })
+    mockApi.institution.getAll.mockResolvedValueOnce([])
+
+    await useStore.getState().reorderAdvisors(order)
+
+    expect(mockApi.advisor.reorder).toHaveBeenCalledWith(order)
+    expect(mockApi.institution.getAll).toHaveBeenCalled()
+  })
+
+  it('throws and sets error when advisor reorder fails', async () => {
+    mockApi.advisor.reorder.mockResolvedValueOnce({ success: false, error: '导师排序失败' })
+
+    await expect(useStore.getState().reorderAdvisors(['advisor-1'])).rejects.toThrow('导师排序失败')
+    expect(useStore.getState().error).toBe('导师排序失败')
   })
 })
 

@@ -13,3 +13,5 @@ dist-mac/
 # prisma/dev.db 是种子空库，需要打包进安装包
 !prisma/dev.db
 *.tsbuildinfo
+
+.npm-cache

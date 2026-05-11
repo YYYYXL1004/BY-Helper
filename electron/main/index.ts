@@ -113,6 +113,50 @@ function backupUserDatabase(userDbPath: string, reason: string): void {
   log.info(`[Prod] Backed up user database before ${reason}:`, backupBasePath)
 }
 
+async function ensureColumn(
+  client: any,
+  tableName: 'Institution' | 'Advisor',
+  columnName: string,
+  columnDefinition: string,
+  beforeAlter?: () => void
+): Promise<boolean> {
+  const columns = await client.$queryRawUnsafe(`PRAGMA table_info("${tableName}")`)
+  if ((columns as unknown[]).length === 0) return false
+  const hasColumn = (columns as Array<{ name: string }>).some((column) => column.name === columnName)
+  if (hasColumn) return false
+
+  beforeAlter?.()
+  await client.$executeRawUnsafe(`ALTER TABLE "${tableName}" ADD COLUMN "${columnName}" ${columnDefinition}`)
+  return true
+}
+
+async function ensureSortableSchema(dbPath: string, shouldBackup: boolean): Promise<void> {
+  let tmpPrisma: any = null
+  try {
+    const { PrismaClient: PC } = require(getPrismaClientPath())
+    tmpPrisma = new PC({ datasources: { db: { url: `file:${dbPath}` } } })
+
+    let didBackup = false
+    const backupOnce = (): void => {
+      if (shouldBackup && !didBackup) {
+        backupUserDatabase(dbPath, 'sort order migration')
+        didBackup = true
+      }
+    }
+
+    const institutionChanged = await ensureColumn(tmpPrisma, 'Institution', 'sortOrder', 'INTEGER NOT NULL DEFAULT 0', backupOnce)
+    const advisorChanged = await ensureColumn(tmpPrisma, 'Advisor', 'sortOrder', 'INTEGER NOT NULL DEFAULT 0', backupOnce)
+
+    if (institutionChanged || advisorChanged) {
+      log.info('[Schema] Added sortOrder columns', { institutionChanged, advisorChanged })
+    }
+  } finally {
+    if (tmpPrisma) {
+      try { await tmpPrisma.$disconnect() } catch {}
+    }
+  }
+}
+
 async function ensureProductionDatabaseSchema(userDbPath: string): Promise<void> {
   let tmpPrisma: any = null
   try {
@@ -194,6 +238,7 @@ async function createDatabaseSchema(dbPath: string): Promise<void> {
           "pushDeadline" DATETIME,
           "expectedQuota" INTEGER,
           "policyTags" TEXT NOT NULL DEFAULT '[]',
+          "sortOrder" INTEGER NOT NULL DEFAULT 0,
           "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
           "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -211,6 +256,7 @@ async function createDatabaseSchema(dbPath: string): Promise<void> {
           "lastContactDate" DATETIME,
           "reputationScore" INTEGER,
           "notes" TEXT,
+          "sortOrder" INTEGER NOT NULL DEFAULT 0,
           "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
           "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
           CONSTRAINT "Advisor_institutionId_fkey" FOREIGN KEY ("institutionId") REFERENCES "Institution" ("id") ON DELETE CASCADE ON UPDATE CASCADE
@@ -286,6 +332,7 @@ async function initializeDatabase(): Promise<string> {
 
   if (isDev) {
     log.info('[Dev] Using local dev database at:', dbPath)
+    await ensureSortableSchema(dbPath, false)
     return dbPath
   }
 
@@ -317,10 +364,12 @@ async function initializeDatabase(): Promise<string> {
         throw schemaErr
       }
     }
+    await ensureSortableSchema(userDbPath, false)
     return userDbPath
   }
 
   await ensureProductionDatabaseSchema(userDbPath)
+  await ensureSortableSchema(userDbPath, true)
   return userDbPath
 }
 
@@ -473,6 +522,32 @@ function buildAdvisorUpdateData(data: unknown): JsonRecord {
   return updateData
 }
 
+async function getNextInstitutionSortOrder(client: any, tier: string): Promise<number> {
+  const last = await client.institution.findFirst({
+    where: { tier },
+    orderBy: [{ sortOrder: 'desc' }, { createdAt: 'asc' }],
+    select: { sortOrder: true }
+  })
+  return typeof last?.sortOrder === 'number' ? last.sortOrder + 1 : 0
+}
+
+async function getNextAdvisorSortOrder(client: any, institutionId: string): Promise<number> {
+  const last = await client.advisor.findFirst({
+    where: { institutionId },
+    orderBy: [{ sortOrder: 'desc' }, { createdAt: 'asc' }],
+    select: { sortOrder: true }
+  })
+  return typeof last?.sortOrder === 'number' ? last.sortOrder + 1 : 0
+}
+
+function normalizeOrderedIds(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new Error('orderedIds must be an array')
+  const ids = value.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+  if (ids.length !== value.length) throw new Error('orderedIds must contain only non-empty strings')
+  if (new Set(ids).size !== ids.length) throw new Error('orderedIds must not contain duplicates')
+  return ids
+}
+
 log.transports.file.level = 'info'
 log.info('Application starting...', { isDev, platform })
 
@@ -529,10 +604,13 @@ ipcMain.handle('institution:getAll', async () => {
     const client = await getPrisma()
     return await client.institution.findMany({
       include: {
-        advisors: { include: { assets: true, interviews: true } },
+        advisors: {
+          include: { assets: true, interviews: true },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }]
+        },
         tasks: true
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }]
     })
   } catch (error) {
     log.error('Error fetching institutions:', error)
@@ -546,7 +624,10 @@ ipcMain.handle('institution:getById', async (_, id: string) => {
     return await client.institution.findUnique({
       where: { id },
       include: {
-        advisors: { include: { assets: true, interviews: true } },
+        advisors: {
+          include: { assets: true, interviews: true },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }]
+        },
         tasks: true
       }
     })
@@ -559,6 +640,7 @@ ipcMain.handle('institution:getById', async (_, id: string) => {
 ipcMain.handle('institution:create', async (_, data: any) => {
   try {
     const client = await getPrisma()
+    const sortOrder = await getNextInstitutionSortOrder(client, data.tier)
     return await client.institution.create({
       data: {
         name: data.name,
@@ -568,7 +650,8 @@ ipcMain.handle('institution:create', async (_, data: any) => {
         campDeadline: parseNullableDate(data.campDeadline, 'campDeadline'),
         pushDeadline: parseNullableDate(data.pushDeadline, 'pushDeadline'),
         expectedQuota: data.expectedQuota,
-        policyTags: JSON.stringify(data.policyTags || [])
+        policyTags: JSON.stringify(data.policyTags || []),
+        sortOrder
       },
       include: { advisors: true, tasks: true }
     })
@@ -610,6 +693,35 @@ ipcMain.handle('institution:delete', async (_, id: string) => {
   }
 })
 
+ipcMain.handle('institution:reorder', async (_, orderedIds: unknown) => {
+  try {
+    const ids = normalizeOrderedIds(orderedIds)
+    if (ids.length === 0) return { success: true }
+
+    const client = await getPrisma()
+    const institutions = await client.institution.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, tier: true }
+    })
+    if (institutions.length !== ids.length) {
+      return { success: false, error: '院校列表中包含不存在的院校' }
+    }
+
+    const tiers = new Set(institutions.map((institution: { tier: string }) => institution.tier))
+    if (tiers.size > 1) {
+      return { success: false, error: '只能在同一层级内调整院校顺序' }
+    }
+
+    await client.$transaction(
+      ids.map((id, sortOrder) => client.institution.update({ where: { id }, data: { sortOrder } }))
+    )
+    return { success: true }
+  } catch (error: unknown) {
+    log.error('Error reordering institutions:', error)
+    return { success: false, error: getErrorMessage(error) }
+  }
+})
+
 // ============== Advisor CRUD ==============
 
 ipcMain.handle('advisor:getByInstitution', async (_, institutionId: string) => {
@@ -617,7 +729,8 @@ ipcMain.handle('advisor:getByInstitution', async (_, institutionId: string) => {
     const client = await getPrisma()
     return await client.advisor.findMany({
       where: { institutionId },
-      include: { assets: true, interviews: true }
+      include: { assets: true, interviews: true },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }]
     })
   } catch (error) {
     log.error('Error fetching advisors:', error)
@@ -628,6 +741,7 @@ ipcMain.handle('advisor:getByInstitution', async (_, institutionId: string) => {
 ipcMain.handle('advisor:create', async (_, data: any) => {
   try {
     const client = await getPrisma()
+    const sortOrder = await getNextAdvisorSortOrder(client, data.institutionId)
     return await client.advisor.create({
       data: {
         institutionId: data.institutionId,
@@ -639,7 +753,8 @@ ipcMain.handle('advisor:create', async (_, data: any) => {
         contactStatus: data.contactStatus || 'PENDING',
         lastContactDate: parseNullableDate(data.lastContactDate, 'lastContactDate'),
         reputationScore: data.reputationScore,
-        notes: data.notes
+        notes: data.notes,
+        sortOrder
       },
       include: { assets: true, interviews: true }
     })
@@ -678,6 +793,35 @@ ipcMain.handle('advisor:delete', async (_, id: string) => {
   } catch (error) {
     log.error('Error deleting advisor:', error)
     throw error
+  }
+})
+
+ipcMain.handle('advisor:reorder', async (_, orderedIds: unknown) => {
+  try {
+    const ids = normalizeOrderedIds(orderedIds)
+    if (ids.length === 0) return { success: true }
+
+    const client = await getPrisma()
+    const advisors = await client.advisor.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, institutionId: true }
+    })
+    if (advisors.length !== ids.length) {
+      return { success: false, error: '导师列表中包含不存在的导师' }
+    }
+
+    const institutionIds = new Set(advisors.map((advisor: { institutionId: string }) => advisor.institutionId))
+    if (institutionIds.size > 1) {
+      return { success: false, error: '只能在同一院校内调整导师顺序' }
+    }
+
+    await client.$transaction(
+      ids.map((id, sortOrder) => client.advisor.update({ where: { id }, data: { sortOrder } }))
+    )
+    return { success: true }
+  } catch (error: unknown) {
+    log.error('Error reordering advisors:', error)
+    return { success: false, error: getErrorMessage(error) }
   }
 })
 

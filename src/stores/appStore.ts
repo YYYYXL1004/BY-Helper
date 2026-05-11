@@ -18,6 +18,7 @@ export interface Institution {
   pushDeadline: string | null
   expectedQuota: number | null
   policyTags: string
+  sortOrder?: number
   createdAt: string
   updatedAt: string
   advisors?: Advisor[]
@@ -36,6 +37,7 @@ export interface Advisor {
   lastContactDate: string | null
   reputationScore: number | null
   notes: string | null
+  sortOrder?: number
   assets?: Asset[]
   interviews?: Interview[]
 }
@@ -144,9 +146,11 @@ interface AppState {
   addInstitution: (data: InstitutionInput) => Promise<Institution>
   updateInstitution: (id: string, data: Partial<InstitutionInput>) => Promise<Institution>
   deleteInstitution: (id: string) => Promise<void>
+  reorderInstitutions: (orderedIds: string[]) => Promise<void>
   addAdvisor: (data: AdvisorInput) => Promise<Advisor>
   updateAdvisor: (id: string, data: Partial<AdvisorInput>) => Promise<void>
   deleteAdvisor: (id: string) => Promise<void>
+  reorderAdvisors: (orderedIds: string[]) => Promise<void>
   addTask: (data: TaskInput) => Promise<Task>
   updateTask: (id: string, data: TaskUpdate) => Promise<void>
   deleteTask: (id: string) => Promise<void>
@@ -237,6 +241,19 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  reorderInstitutions: async (orderedIds) => {
+    try {
+      const result = await window.api.institution.reorder(orderedIds)
+      if (!result.success) {
+        throw new Error(result.error || '院校排序失败')
+      }
+      await get().loadInstitutions()
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
+      throw error
+    }
+  },
+
   addAdvisor: async (data) => {
     try {
       const newAdvisor = await window.api.advisor.create(data)
@@ -261,6 +278,19 @@ export const useStore = create<AppState>((set, get) => ({
   deleteAdvisor: async (id) => {
     try {
       await window.api.advisor.delete(id)
+      await get().loadInstitutions()
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
+      throw error
+    }
+  },
+
+  reorderAdvisors: async (orderedIds) => {
+    try {
+      const result = await window.api.advisor.reorder(orderedIds)
+      if (!result.success) {
+        throw new Error(result.error || '导师排序失败')
+      }
       await get().loadInstitutions()
     } catch (error: unknown) {
       set({ error: getErrorMessage(error) })

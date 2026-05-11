@@ -91,14 +91,16 @@ const api = {
     getById: (id: string) => ipcRenderer.invoke('institution:getById', id),
     create: (data: InstitutionInput) => ipcRenderer.invoke('institution:create', data),
     update: (id: string, data: Partial<InstitutionInput>) => ipcRenderer.invoke('institution:update', id, data),
-    delete: (id: string) => ipcRenderer.invoke('institution:delete', id)
+    delete: (id: string) => ipcRenderer.invoke('institution:delete', id),
+    reorder: (orderedIds: string[]) => ipcRenderer.invoke('institution:reorder', orderedIds)
   },
   advisor: {
     getByInstitution: (institutionId: string) => ipcRenderer.invoke('advisor:getByInstitution', institutionId),
     create: (data: AdvisorInput) => ipcRenderer.invoke('advisor:create', data),
     update: (id: string, data: Partial<AdvisorInput>) => ipcRenderer.invoke('advisor:update', id, data),
     delete: (id: string) => ipcRenderer.invoke('advisor:delete', id),
-    getConflictWarnings: (institutionId: string) => ipcRenderer.invoke('advisor:getConflictWarnings', institutionId)
+    getConflictWarnings: (institutionId: string) => ipcRenderer.invoke('advisor:getConflictWarnings', institutionId),
+    reorder: (orderedIds: string[]) => ipcRenderer.invoke('advisor:reorder', orderedIds)
   },
   task: {
     getByInstitution: (institutionId: string) => ipcRenderer.invoke('task:getByInstitution', institutionId),

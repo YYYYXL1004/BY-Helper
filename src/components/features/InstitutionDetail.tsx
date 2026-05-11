@@ -7,7 +7,7 @@
  * Copyright (c) 2026. All rights reserved.
  */
 import { useState, useEffect } from 'react'
-import { ArrowLeft, Building2, Users, Edit2, Trash2, Plus, Mail, ExternalLink, FileText, CheckCircle2, Circle, AlertTriangle, ArrowRight, ChevronDown, Check } from 'lucide-react'
+import { ArrowLeft, Building2, Users, Edit2, Trash2, Plus, Mail, ExternalLink, FileText, CheckCircle2, Circle, AlertTriangle, ArrowRight, ChevronDown, Check, GripVertical } from 'lucide-react'
 import { useStore, Advisor, Asset, Task } from '../../stores/appStore'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
@@ -34,7 +34,7 @@ function renderStarRating(score: number | null | undefined): string | null {
 }
 
 export default function InstitutionDetail({ institutionId, onBack }: InstitutionDetailProps): JSX.Element {
-  const { institutions, isLoading, deleteInstitution, updateTask, deleteTask, updateAdvisor, addAsset, conflictWarnings, checkConflicts } = useStore()
+  const { institutions, isLoading, deleteInstitution, updateTask, deleteTask, updateAdvisor, reorderAdvisors, addAsset, conflictWarnings, checkConflicts } = useStore()
   const [showAdvisorForm, setShowAdvisorForm] = useState(false)
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [showInterviewForm, setShowInterviewForm] = useState(false)
@@ -45,6 +45,7 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
   const [selectedAdvisor, setSelectedAdvisor] = useState<Advisor | null>(null)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [activeTab, setActiveTab] = useState('overview')
+  const [draggedAdvisorId, setDraggedAdvisorId] = useState<string | null>(null)
 
   const institution = institutions.find((i) => i.id === institutionId)
 
@@ -83,6 +84,20 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
     if (!taskIdToDelete) return
     await deleteTask(taskIdToDelete)
     setTaskIdToDelete(null)
+  }
+
+  const handleAdvisorDrop = async (targetId: string | null): Promise<void> => {
+    if (!draggedAdvisorId || !institution.advisors) return
+
+    const currentIds = institution.advisors.map((advisor) => advisor.id)
+    if (!currentIds.includes(draggedAdvisorId)) return
+
+    const nextIds = currentIds.filter((id) => id !== draggedAdvisorId)
+    const targetIndex = targetId ? nextIds.indexOf(targetId) : nextIds.length
+    nextIds.splice(targetIndex >= 0 ? targetIndex : nextIds.length, 0, draggedAdvisorId)
+
+    if (nextIds.join('|') === currentIds.join('|')) return
+    await reorderAdvisors(nextIds)
   }
 
   const policyTags = parsePolicyTags(institution.policyTags)
@@ -315,9 +330,34 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
 
           <TabsContent value="advisors" className="p-4">
             {institution.advisors && institution.advisors.length > 0 ? (
-              <div className="space-y-4">
+              <div
+                className="space-y-4"
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  void handleAdvisorDrop(null)
+                }}
+              >
                 {institution.advisors.map((advisor) => (
-                  <AdvisorCard key={advisor.id} advisor={advisor} onEdit={() => { setSelectedAdvisor(advisor); setShowAdvisorForm(true) }} onAddInterview={() => { setSelectedAdvisor(advisor); setShowInterviewForm(true) }} updateAdvisor={updateAdvisor} addAsset={addAsset} />
+                  <div
+                    key={advisor.id}
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = 'move'
+                      setDraggedAdvisorId(advisor.id)
+                    }}
+                    onDragEnd={() => setDraggedAdvisorId(null)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      void handleAdvisorDrop(advisor.id)
+                    }}
+                    className={`group relative ${draggedAdvisorId === advisor.id ? 'opacity-50' : ''}`}
+                  >
+                    <GripVertical className="absolute right-3 top-3 h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 pointer-events-none" />
+                    <AdvisorCard advisor={advisor} onEdit={() => { setSelectedAdvisor(advisor); setShowAdvisorForm(true) }} onAddInterview={() => { setSelectedAdvisor(advisor); setShowInterviewForm(true) }} updateAdvisor={updateAdvisor} addAsset={addAsset} />
+                  </div>
                 ))}
               </div>
             ) : (
