@@ -11,6 +11,8 @@ import type {
   Advisor,
   AdvisorInput,
   Asset,
+  ContactRecord,
+  ContactRecordInput,
   EmailTemplate,
   EmailVariable,
   Institution,
@@ -77,6 +79,10 @@ interface CustomAPI {
   interview: {
     create: (data: InterviewInput) => Promise<Interview>
     update: (id: string, data: Partial<InterviewInput>) => Promise<Interview>
+    delete: (id: string) => Promise<boolean>
+  }
+  contactRecord: {
+    create: (data: ContactRecordInput) => Promise<ContactRecord>
     delete: (id: string) => Promise<boolean>
   }
   file: {

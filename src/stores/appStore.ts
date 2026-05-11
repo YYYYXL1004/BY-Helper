@@ -7,6 +7,7 @@
  * Copyright (c) 2026. All rights reserved.
  */
 import { create } from 'zustand'
+import type { ApplicationStatus, ContactRecordType } from '../lib/constants'
 
 export interface Institution {
   id: string
@@ -14,6 +15,7 @@ export interface Institution {
   department: string
   tier: 'REACH' | 'MATCH' | 'SAFETY'
   degreeType: 'MASTER' | 'PROFESSIONAL' | 'PHD'
+  applicationStatus?: ApplicationStatus
   campDeadline: string | null
   pushDeadline: string | null
   expectedQuota: number | null
@@ -40,6 +42,7 @@ export interface Advisor {
   sortOrder?: number
   assets?: Asset[]
   interviews?: Interview[]
+  contactRecords?: ContactRecord[]
 }
 
 export interface Task {
@@ -65,6 +68,22 @@ export interface Interview {
   markdownNotes: string
 }
 
+export interface ContactRecord {
+  id: string
+  advisorId: string
+  date: string
+  type: ContactRecordType
+  content: string
+  createdAt?: string
+}
+
+export interface ContactRecordInput {
+  advisorId: string
+  date: string | Date
+  type: ContactRecordType
+  content: string
+}
+
 export interface EmailVariable {
   id: string
   name: string
@@ -87,6 +106,7 @@ export interface InstitutionInput {
   department: string
   tier: Institution['tier']
   degreeType: Institution['degreeType']
+  applicationStatus?: ApplicationStatus
   campDeadline: string | Date | null
   pushDeadline: string | Date | null
   expectedQuota: number | null
@@ -159,6 +179,8 @@ interface AppState {
   addInterview: (data: InterviewInput) => Promise<Interview>
   updateInterview: (id: string, data: Partial<InterviewInput>) => Promise<void>
   deleteInterview: (id: string) => Promise<void>
+  addContactRecord: (data: ContactRecordInput) => Promise<ContactRecord>
+  deleteContactRecord: (id: string) => Promise<void>
   checkConflicts: (institutionId: string) => Promise<void>
   clearError: () => void
   loadEmailTemplates: () => Promise<void>
@@ -383,6 +405,27 @@ export const useStore = create<AppState>((set, get) => ({
   deleteInterview: async (id) => {
     try {
       await window.api.interview.delete(id)
+      await get().loadInstitutions()
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
+      throw error
+    }
+  },
+
+  addContactRecord: async (data) => {
+    try {
+      const record = await window.api.contactRecord.create(data)
+      await get().loadInstitutions()
+      return record
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
+      throw error
+    }
+  },
+
+  deleteContactRecord: async (id) => {
+    try {
+      await window.api.contactRecord.delete(id)
       await get().loadInstitutions()
     } catch (error: unknown) {
       set({ error: getErrorMessage(error) })

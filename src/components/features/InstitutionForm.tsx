@@ -14,7 +14,7 @@ import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '../ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
-import { Tier, DegreeType, tierDescriptions, degreeTypeLabels } from '../../lib/constants'
+import { Tier, DegreeType, ApplicationStatus, applicationStatusOptions, tierDescriptions, degreeTypeLabels } from '../../lib/constants'
 import { parsePolicyTags } from '../../lib/utils'
 
 interface InstitutionFormProps {
@@ -32,6 +32,7 @@ export default function InstitutionForm({ institution, onClose, onSuccess }: Ins
         department: institution.department,
         tier: institution.tier,
         degreeType: institution.degreeType,
+        applicationStatus: institution.applicationStatus || 'WATCHING',
         campDeadline: institution.campDeadline || '',
         pushDeadline: institution.pushDeadline || '',
         expectedQuota: institution.expectedQuota != null ? institution.expectedQuota : undefined,
@@ -43,6 +44,7 @@ export default function InstitutionForm({ institution, onClose, onSuccess }: Ins
       department: '',
       tier: 'MATCH' as Tier,
       degreeType: 'MASTER' as DegreeType,
+      applicationStatus: 'WATCHING' as ApplicationStatus,
       campDeadline: '',
       pushDeadline: '',
       expectedQuota: undefined as number | undefined,
@@ -67,6 +69,7 @@ export default function InstitutionForm({ institution, onClose, onSuccess }: Ins
         department: formData.department.trim(),
         tier: formData.tier,
         degreeType: formData.degreeType,
+        applicationStatus: formData.applicationStatus,
         campDeadline: formData.campDeadline || null,
         pushDeadline: formData.pushDeadline || null,
         expectedQuota: formData.expectedQuota != null ? formData.expectedQuota : null,
@@ -141,6 +144,17 @@ export default function InstitutionForm({ institution, onClose, onSuccess }: Ins
                   <SelectItem value="MASTER">{degreeTypeLabels.MASTER}</SelectItem>
                   <SelectItem value="PROFESSIONAL">{degreeTypeLabels.PROFESSIONAL}</SelectItem>
                   <SelectItem value="PHD">{degreeTypeLabels.PHD}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="col-span-2">
+              <Label htmlFor="inst-status">申请状态</Label>
+              <Select value={formData.applicationStatus} onValueChange={(value) => setFormData(prev => ({ ...prev, applicationStatus: value as ApplicationStatus }))}>
+                <SelectTrigger id="inst-status"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {applicationStatusOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

@@ -56,6 +56,13 @@ interface InterviewInput {
   markdownNotes: string
 }
 
+interface ContactRecordInput {
+  advisorId: string
+  date: string | Date
+  type: 'EMAIL_SENT' | 'EMAIL_REPLIED' | 'FOLLOW_UP' | 'WECHAT_ADDED' | 'INTERVIEW_INVITE' | 'PHONE_CALL' | 'OTHER'
+  content: string
+}
+
 interface FileSelectOptions {
   title?: string
   filters?: Array<{ name: string; extensions: string[] }>
@@ -117,6 +124,10 @@ const api = {
     create: (data: InterviewInput) => ipcRenderer.invoke('interview:create', data),
     update: (id: string, data: Partial<InterviewInput>) => ipcRenderer.invoke('interview:update', id, data),
     delete: (id: string) => ipcRenderer.invoke('interview:delete', id)
+  },
+  contactRecord: {
+    create: (data: ContactRecordInput) => ipcRenderer.invoke('contactRecord:create', data),
+    delete: (id: string) => ipcRenderer.invoke('contactRecord:delete', id)
   },
   file: {
     selectFile: (options?: FileSelectOptions) => ipcRenderer.invoke('file:selectFile', options),

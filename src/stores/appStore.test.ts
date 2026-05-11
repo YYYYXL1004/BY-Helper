@@ -17,6 +17,10 @@ const mockApi = {
     getConflictWarnings: vi.fn(),
     reorder: vi.fn(),
   },
+  contactRecord: {
+    create: vi.fn(),
+    delete: vi.fn(),
+  },
   task: {
     getOrphan: vi.fn(),
     create: vi.fn(),
@@ -249,6 +253,34 @@ describe('appStore — reorderAdvisors', () => {
 
     await expect(useStore.getState().reorderAdvisors(['advisor-1'])).rejects.toThrow('导师排序失败')
     expect(useStore.getState().error).toBe('导师排序失败')
+  })
+})
+
+describe('appStore — contact records', () => {
+  it('creates a contact record and reloads institutions', async () => {
+    const input = {
+      advisorId: 'advisor-1',
+      date: '2026-05-11',
+      type: 'WECHAT_ADDED' as const,
+      content: '已添加导师微信'
+    }
+    mockApi.contactRecord.create.mockResolvedValueOnce({ id: 'record-1', ...input })
+    mockApi.institution.getAll.mockResolvedValueOnce([])
+
+    await useStore.getState().addContactRecord(input)
+
+    expect(mockApi.contactRecord.create).toHaveBeenCalledWith(input)
+    expect(mockApi.institution.getAll).toHaveBeenCalled()
+  })
+
+  it('deletes a contact record and reloads institutions', async () => {
+    mockApi.contactRecord.delete.mockResolvedValueOnce(true)
+    mockApi.institution.getAll.mockResolvedValueOnce([])
+
+    await useStore.getState().deleteContactRecord('record-1')
+
+    expect(mockApi.contactRecord.delete).toHaveBeenCalledWith('record-1')
+    expect(mockApi.institution.getAll).toHaveBeenCalled()
   })
 })
 

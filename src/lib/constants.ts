@@ -34,6 +34,48 @@ export const tierBorderColors: Record<Tier, string> = {
   SAFETY: 'border-green-300 dark:border-green-700'
 }
 
+// ==================== 院校申请状态 (Application Status) ====================
+export type ApplicationStatus =
+  | 'WATCHING'
+  | 'TO_APPLY'
+  | 'APPLIED'
+  | 'SCREEN_PASSED'
+  | 'SHORTLISTED'
+  | 'INTERVIEWING'
+  | 'OFFERED'
+  | 'WAITLISTED'
+  | 'REJECTED'
+  | 'WITHDRAWN'
+
+export const applicationStatusLabels: Record<ApplicationStatus, string> = {
+  WATCHING: '待关注',
+  TO_APPLY: '待报名',
+  APPLIED: '已报名',
+  SCREEN_PASSED: '初审通过',
+  SHORTLISTED: '入营/入围',
+  INTERVIEWING: '面试中',
+  OFFERED: '优营/拟录取',
+  WAITLISTED: '候补',
+  REJECTED: '被拒',
+  WITHDRAWN: '已放弃'
+}
+
+export const applicationStatusBadge: Record<ApplicationStatus, string> = {
+  WATCHING: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+  TO_APPLY: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+  APPLIED: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
+  SCREEN_PASSED: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
+  SHORTLISTED: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300',
+  INTERVIEWING: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
+  OFFERED: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+  WAITLISTED: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+  REJECTED: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  WITHDRAWN: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+}
+
+export const applicationStatusOptions: Array<{ value: ApplicationStatus; label: string }> =
+  Object.entries(applicationStatusLabels).map(([value, label]) => ({ value: value as ApplicationStatus, label }))
+
 // ==================== 学位类型 (Degree Type) ====================
 export type DegreeType = 'MASTER' | 'PROFESSIONAL' | 'PHD'
 
@@ -104,6 +146,22 @@ export const statusOptions: { value: ContactStatus; label: string }[] = [
 
 // 别名导出，兼容 InstitutionDetail 中的引用
 export const advisorStatusConfig = contactStatusConfig
+
+// ==================== 导师联系记录类型 (Contact Record Type) ====================
+export type ContactRecordType = 'EMAIL_SENT' | 'EMAIL_REPLIED' | 'FOLLOW_UP' | 'WECHAT_ADDED' | 'INTERVIEW_INVITE' | 'PHONE_CALL' | 'OTHER'
+
+export const contactRecordTypeLabels: Record<ContactRecordType, string> = {
+  EMAIL_SENT: '发送邮件',
+  EMAIL_REPLIED: '收到回复',
+  FOLLOW_UP: '跟进联系',
+  WECHAT_ADDED: '添加微信',
+  INTERVIEW_INVITE: '面试邀请',
+  PHONE_CALL: '电话沟通',
+  OTHER: '其他'
+}
+
+export const contactRecordTypeOptions: Array<{ value: ContactRecordType; label: string }> =
+  Object.entries(contactRecordTypeLabels).map(([value, label]) => ({ value: value as ContactRecordType, label }))
 
 // ==================== 面试形式 (Interview Format) ====================
 export type InterviewFormat = 'ONLINE' | 'OFFLINE'

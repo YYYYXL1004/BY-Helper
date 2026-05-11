@@ -130,7 +130,37 @@ async function ensureColumn(
   return true
 }
 
-async function ensureSortableSchema(dbPath: string, shouldBackup: boolean): Promise<void> {
+async function ensureTable(
+  client: any,
+  tableName: string,
+  createSql: string,
+  beforeCreate?: () => void
+): Promise<boolean> {
+  const rows = await client.$queryRawUnsafe(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name = '${tableName}'`
+  )
+  if ((rows as unknown[]).length > 0) return false
+
+  beforeCreate?.()
+  await client.$executeRawUnsafe(createSql)
+  return true
+}
+
+function contactRecordTableSql(): string {
+  return `
+    CREATE TABLE IF NOT EXISTS "ContactRecord" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "advisorId" TEXT NOT NULL,
+      "date" DATETIME NOT NULL,
+      "type" TEXT NOT NULL,
+      "content" TEXT NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "ContactRecord_advisorId_fkey" FOREIGN KEY ("advisorId") REFERENCES "Advisor" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    )
+  `
+}
+
+async function ensureCurrentSchema(dbPath: string, shouldBackup: boolean): Promise<void> {
   let tmpPrisma: any = null
   try {
     const { PrismaClient: PC } = require(getPrismaClientPath())
@@ -139,16 +169,23 @@ async function ensureSortableSchema(dbPath: string, shouldBackup: boolean): Prom
     let didBackup = false
     const backupOnce = (): void => {
       if (shouldBackup && !didBackup) {
-        backupUserDatabase(dbPath, 'sort order migration')
+        backupUserDatabase(dbPath, 'schema migration')
         didBackup = true
       }
     }
 
     const institutionChanged = await ensureColumn(tmpPrisma, 'Institution', 'sortOrder', 'INTEGER NOT NULL DEFAULT 0', backupOnce)
+    const statusChanged = await ensureColumn(tmpPrisma, 'Institution', 'applicationStatus', 'TEXT NOT NULL DEFAULT "WATCHING"', backupOnce)
     const advisorChanged = await ensureColumn(tmpPrisma, 'Advisor', 'sortOrder', 'INTEGER NOT NULL DEFAULT 0', backupOnce)
+    const contactRecordChanged = await ensureTable(tmpPrisma, 'ContactRecord', contactRecordTableSql(), backupOnce)
 
-    if (institutionChanged || advisorChanged) {
-      log.info('[Schema] Added sortOrder columns', { institutionChanged, advisorChanged })
+    if (institutionChanged || statusChanged || advisorChanged || contactRecordChanged) {
+      log.info('[Schema] Applied current schema migration', {
+        institutionSortOrder: institutionChanged,
+        applicationStatus: statusChanged,
+        advisorSortOrder: advisorChanged,
+        contactRecord: contactRecordChanged
+      })
     }
   } finally {
     if (tmpPrisma) {
@@ -234,6 +271,7 @@ async function createDatabaseSchema(dbPath: string): Promise<void> {
           "department" TEXT NOT NULL,
           "tier" TEXT NOT NULL,
           "degreeType" TEXT NOT NULL,
+          "applicationStatus" TEXT NOT NULL DEFAULT 'WATCHING',
           "campDeadline" DATETIME,
           "pushDeadline" DATETIME,
           "expectedQuota" INTEGER,
@@ -295,6 +333,7 @@ async function createDatabaseSchema(dbPath: string): Promise<void> {
           CONSTRAINT "Interview_advisorId_fkey" FOREIGN KEY ("advisorId") REFERENCES "Advisor" ("id") ON DELETE CASCADE ON UPDATE CASCADE
         )
       `)
+      await tmpPrisma.$executeRawUnsafe(contactRecordTableSql())
       await tmpPrisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS "EmailTemplate" (
           "id" TEXT NOT NULL PRIMARY KEY,
@@ -332,7 +371,7 @@ async function initializeDatabase(): Promise<string> {
 
   if (isDev) {
     log.info('[Dev] Using local dev database at:', dbPath)
-    await ensureSortableSchema(dbPath, false)
+    await ensureCurrentSchema(dbPath, false)
     return dbPath
   }
 
@@ -364,12 +403,12 @@ async function initializeDatabase(): Promise<string> {
         throw schemaErr
       }
     }
-    await ensureSortableSchema(userDbPath, false)
+    await ensureCurrentSchema(userDbPath, false)
     return userDbPath
   }
 
   await ensureProductionDatabaseSchema(userDbPath)
-  await ensureSortableSchema(userDbPath, true)
+  await ensureCurrentSchema(userDbPath, true)
   return userDbPath
 }
 
@@ -494,6 +533,7 @@ function buildInstitutionUpdateData(data: unknown): JsonRecord {
   if (input.department !== undefined) updateData.department = input.department
   if (input.tier !== undefined) updateData.tier = input.tier
   if (input.degreeType !== undefined) updateData.degreeType = input.degreeType
+  if (input.applicationStatus !== undefined) updateData.applicationStatus = input.applicationStatus
   if (input.campDeadline !== undefined) updateData.campDeadline = parseNullableDate(input.campDeadline, 'campDeadline')
   if (input.pushDeadline !== undefined) updateData.pushDeadline = parseNullableDate(input.pushDeadline, 'pushDeadline')
   if (input.expectedQuota !== undefined) updateData.expectedQuota = input.expectedQuota
@@ -502,6 +542,20 @@ function buildInstitutionUpdateData(data: unknown): JsonRecord {
   }
 
   return updateData
+}
+
+function buildInstitutionInclude(): JsonRecord {
+  return {
+    advisors: {
+      include: {
+        assets: true,
+        interviews: true,
+        contactRecords: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }
+      },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }]
+    },
+    tasks: true
+  }
 }
 
 function buildAdvisorUpdateData(data: unknown): JsonRecord {
@@ -603,13 +657,7 @@ ipcMain.handle('institution:getAll', async () => {
   try {
     const client = await getPrisma()
     return await client.institution.findMany({
-      include: {
-        advisors: {
-          include: { assets: true, interviews: true },
-          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }]
-        },
-        tasks: true
-      },
+      include: buildInstitutionInclude(),
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }]
     })
   } catch (error) {
@@ -623,13 +671,7 @@ ipcMain.handle('institution:getById', async (_, id: string) => {
     const client = await getPrisma()
     return await client.institution.findUnique({
       where: { id },
-      include: {
-        advisors: {
-          include: { assets: true, interviews: true },
-          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }]
-        },
-        tasks: true
-      }
+      include: buildInstitutionInclude()
     })
   } catch (error) {
     log.error('Error fetching institution:', error)
@@ -647,13 +689,14 @@ ipcMain.handle('institution:create', async (_, data: any) => {
         department: data.department,
         tier: data.tier,
         degreeType: data.degreeType,
+        applicationStatus: data.applicationStatus || 'WATCHING',
         campDeadline: parseNullableDate(data.campDeadline, 'campDeadline'),
         pushDeadline: parseNullableDate(data.pushDeadline, 'pushDeadline'),
         expectedQuota: data.expectedQuota,
         policyTags: JSON.stringify(data.policyTags || []),
         sortOrder
       },
-      include: { advisors: true, tasks: true }
+      include: buildInstitutionInclude()
     })
   } catch (error) {
     log.error('Error creating institution:', error)
@@ -668,13 +711,13 @@ ipcMain.handle('institution:update', async (_, id: string, data: any) => {
     if (Object.keys(updateData).length === 0) {
       return await client.institution.findUnique({
         where: { id },
-        include: { advisors: true, tasks: true }
+        include: buildInstitutionInclude()
       })
     }
     return await client.institution.update({
       where: { id },
       data: updateData,
-      include: { advisors: true, tasks: true }
+      include: buildInstitutionInclude()
     })
   } catch (error) {
     log.error('Error updating institution:', error)
@@ -729,7 +772,11 @@ ipcMain.handle('advisor:getByInstitution', async (_, institutionId: string) => {
     const client = await getPrisma()
     return await client.advisor.findMany({
       where: { institutionId },
-      include: { assets: true, interviews: true },
+      include: {
+        assets: true,
+        interviews: true,
+        contactRecords: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }
+      },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }]
     })
   } catch (error) {
@@ -756,7 +803,11 @@ ipcMain.handle('advisor:create', async (_, data: any) => {
         notes: data.notes,
         sortOrder
       },
-      include: { assets: true, interviews: true }
+      include: {
+        assets: true,
+        interviews: true,
+        contactRecords: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }
+      }
     })
   } catch (error) {
     log.error('Error creating advisor:', error)
@@ -771,13 +822,21 @@ ipcMain.handle('advisor:update', async (_, id: string, data: any) => {
     if (Object.keys(updateData).length === 0) {
       return await client.advisor.findUnique({
         where: { id },
-        include: { assets: true, interviews: true }
+        include: {
+          assets: true,
+          interviews: true,
+          contactRecords: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }
+        }
       })
     }
     return await client.advisor.update({
       where: { id },
       data: updateData,
-      include: { assets: true, interviews: true }
+      include: {
+        assets: true,
+        interviews: true,
+        contactRecords: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }
+      }
     })
   } catch (error) {
     log.error('Error updating advisor:', error)
@@ -1000,6 +1059,36 @@ ipcMain.handle('interview:delete', async (_, id: string) => {
   }
 })
 
+// ============== Contact Record CRUD ==============
+
+ipcMain.handle('contactRecord:create', async (_, data: any) => {
+  try {
+    const client = await getPrisma()
+    return await client.contactRecord.create({
+      data: {
+        advisorId: data.advisorId,
+        date: parseDateRequired(data.date, 'date'),
+        type: data.type,
+        content: data.content || ''
+      }
+    })
+  } catch (error) {
+    log.error('Error creating contact record:', error)
+    throw error
+  }
+})
+
+ipcMain.handle('contactRecord:delete', async (_, id: string) => {
+  try {
+    const client = await getPrisma()
+    await client.contactRecord.delete({ where: { id } })
+    return true
+  } catch (error) {
+    log.error('Error deleting contact record:', error)
+    throw error
+  }
+})
+
 // ============== File Operations ==============
 
 ipcMain.handle('file:selectFile', async (_, options: any) => {
@@ -1176,6 +1265,7 @@ async function clearApplicationData(tx: any): Promise<void> {
   await tx.emailTemplate.deleteMany()
   await tx.asset.deleteMany()
   await tx.interview.deleteMany()
+  await tx.contactRecord.deleteMany()
   await tx.task.deleteMany()
   await tx.advisor.deleteMany()
   await tx.institution.deleteMany()
@@ -1187,7 +1277,7 @@ ipcMain.handle('backup:exportAll', async () => {
     const [institutions, orphanTasks, emailTemplates] = await Promise.all([
       client.institution.findMany({
         include: {
-          advisors: { include: { assets: true, interviews: true } },
+          advisors: { include: { assets: true, interviews: true, contactRecords: true } },
           tasks: true
         }
       }),
@@ -1261,7 +1351,7 @@ ipcMain.handle('backup:importAll', async (_, data: any, options?: { mode?: 'repl
           await tx.institution.create({ data: instRest })
           if (Array.isArray(advisors)) {
             for (const advisor of advisors) {
-              const { assets, interviews, ...advisorRest } = advisor
+              const { assets, interviews, contactRecords, ...advisorRest } = advisor
               const created = await tx.advisor.create({ data: advisorRest })
               if (Array.isArray(assets)) {
                 for (const asset of assets) {
@@ -1271,6 +1361,11 @@ ipcMain.handle('backup:importAll', async (_, data: any, options?: { mode?: 'repl
               if (Array.isArray(interviews)) {
                 for (const interview of interviews) {
                   await tx.interview.create({ data: { ...interview, advisorId: created.id } })
+                }
+              }
+              if (Array.isArray(contactRecords)) {
+                for (const record of contactRecords) {
+                  await tx.contactRecord.create({ data: { ...record, advisorId: created.id } })
                 }
               }
             }

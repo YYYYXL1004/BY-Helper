@@ -8,13 +8,16 @@
  */
 import { useState, useEffect } from 'react'
 import { ArrowLeft, Building2, Users, Edit2, Trash2, Plus, Mail, ExternalLink, FileText, CheckCircle2, Circle, AlertTriangle, ArrowRight, ChevronDown, Check, GripVertical } from 'lucide-react'
-import { useStore, Advisor, Asset, Task } from '../../stores/appStore'
+import { useStore, Advisor, Asset, ContactRecord, ContactRecordInput, Task } from '../../stores/appStore'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
+import { Input } from '../ui/input'
+import { Label } from '../ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../ui/dropdown-menu'
 import { ConfirmDialog } from '../ui/confirm-dialog'
-import { tierColors, tierLabels, degreeTypeLabels, advisorStatusConfig } from '../../lib/constants'
+import { applicationStatusBadge, applicationStatusLabels, applicationStatusOptions, contactRecordTypeLabels, contactRecordTypeOptions, tierColors, tierLabels, degreeTypeLabels, advisorStatusConfig, type ApplicationStatus, type ContactRecordType } from '../../lib/constants'
 import { parsePolicyTags, formatDateSafe } from '../../lib/utils'
 import AdvisorForm from './AdvisorForm'
 import TaskForm from './TaskForm'
@@ -34,7 +37,7 @@ function renderStarRating(score: number | null | undefined): string | null {
 }
 
 export default function InstitutionDetail({ institutionId, onBack }: InstitutionDetailProps): JSX.Element {
-  const { institutions, isLoading, deleteInstitution, updateTask, deleteTask, updateAdvisor, reorderAdvisors, addAsset, conflictWarnings, checkConflicts } = useStore()
+  const { institutions, isLoading, deleteInstitution, updateInstitution, updateTask, deleteTask, updateAdvisor, reorderAdvisors, addAsset, addContactRecord, deleteContactRecord, conflictWarnings, checkConflicts } = useStore()
   const [showAdvisorForm, setShowAdvisorForm] = useState(false)
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [showInterviewForm, setShowInterviewForm] = useState(false)
@@ -86,6 +89,10 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
     setTaskIdToDelete(null)
   }
 
+  const handleApplicationStatusChange = async (status: ApplicationStatus): Promise<void> => {
+    await updateInstitution(institutionId, { applicationStatus: status })
+  }
+
   const handleAdvisorDrop = async (targetId: string | null): Promise<void> => {
     if (!draggedAdvisorId || !institution.advisors) return
 
@@ -102,6 +109,7 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
 
   const policyTags = parsePolicyTags(institution.policyTags)
   const advisorPreviewCount = institution.advisors?.length ?? 0
+  const applicationStatus = (institution.applicationStatus || 'WATCHING') as ApplicationStatus
 
   // 构建删除确认描述
   const advisorCount = institution.advisors?.length || 0
@@ -141,6 +149,26 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
             <div className="flex items-center gap-3">
               <h2 className="text-2xl font-bold">{institution.name}</h2>
               <Badge className={tierColors[institution.tier]}>{tierLabels[institution.tier]}</Badge>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium hover:opacity-80 transition-opacity ${applicationStatusBadge[applicationStatus]}`}>
+                    {applicationStatusLabels[applicationStatus]}
+                    <ChevronDown className="h-3 w-3 opacity-60" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="min-w-[140px]">
+                  {applicationStatusOptions.map((option) => (
+                    <DropdownMenuItem
+                      key={option.value}
+                      onSelect={() => { void handleApplicationStatusChange(option.value) }}
+                      className="flex items-center gap-2 cursor-pointer"
+                    >
+                      <span className="flex-1 text-xs">{option.label}</span>
+                      {applicationStatus === option.value && <Check className="h-3 w-3 text-primary flex-shrink-0" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
             <p className="text-sm text-muted-foreground">{institution.department}</p>
           </div>
@@ -356,7 +384,7 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
                     className={`group relative ${draggedAdvisorId === advisor.id ? 'opacity-50' : ''}`}
                   >
                     <GripVertical className="absolute right-3 top-3 h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 pointer-events-none" />
-                    <AdvisorCard advisor={advisor} onEdit={() => { setSelectedAdvisor(advisor); setShowAdvisorForm(true) }} onAddInterview={() => { setSelectedAdvisor(advisor); setShowInterviewForm(true) }} updateAdvisor={updateAdvisor} addAsset={addAsset} />
+                    <AdvisorCard advisor={advisor} onEdit={() => { setSelectedAdvisor(advisor); setShowAdvisorForm(true) }} onAddInterview={() => { setSelectedAdvisor(advisor); setShowInterviewForm(true) }} updateAdvisor={updateAdvisor} addAsset={addAsset} addContactRecord={addContactRecord} deleteContactRecord={deleteContactRecord} />
                   </div>
                 ))}
               </div>
@@ -411,10 +439,18 @@ interface AdvisorCardProps {
   onAddInterview: () => void
   updateAdvisor: (id: string, data: Partial<Advisor>) => Promise<void>
   addAsset: (data: Omit<Asset, 'id'>) => Promise<Asset>
+  addContactRecord: (data: ContactRecordInput) => Promise<ContactRecord>
+  deleteContactRecord: (id: string) => Promise<void>
 }
 
-function AdvisorCard({ advisor, onEdit, onAddInterview, updateAdvisor, addAsset }: AdvisorCardProps): JSX.Element {
+function AdvisorCard({ advisor, onEdit, onAddInterview, updateAdvisor, addAsset, addContactRecord, deleteContactRecord }: AdvisorCardProps): JSX.Element {
   const [showAssets, setShowAssets] = useState(false)
+  const [showContactForm, setShowContactForm] = useState(false)
+  const [contactForm, setContactForm] = useState({
+    date: new Date().toISOString().slice(0, 10),
+    type: 'EMAIL_SENT' as ContactRecordType,
+    content: ''
+  })
   const starRating = renderStarRating(advisor.reputationScore)
 
   const handleOpenFile = async (path: string): Promise<void> => {
@@ -432,7 +468,22 @@ function AdvisorCard({ advisor, onEdit, onAddInterview, updateAdvisor, addAsset 
     try { await updateAdvisor(advisor.id, { contactStatus: status as Advisor['contactStatus'] }) } catch { /* error already set in store */ }
   }
 
+  const handleAddContactRecord = async (event: React.FormEvent): Promise<void> => {
+    event.preventDefault()
+    const content = contactForm.content.trim()
+    if (!content) return
+    await addContactRecord({
+      advisorId: advisor.id,
+      date: contactForm.date,
+      type: contactForm.type,
+      content
+    })
+    setContactForm((prev) => ({ ...prev, content: '' }))
+    setShowContactForm(false)
+  }
+
   const currentStatus = advisorStatusConfig[advisor.contactStatus] ?? advisorStatusConfig.PENDING
+  const contactRecords = advisor.contactRecords || []
 
   return (
     <div className="border rounded-lg p-4 bg-card">
@@ -503,6 +554,63 @@ function AdvisorCard({ advisor, onEdit, onAddInterview, updateAdvisor, addAsset 
           )}
         </div>
       )}
+
+      <div className="mb-3 rounded-lg border border-border bg-muted/20 p-3">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <p className="text-sm font-medium">联系记录</p>
+          <Button size="sm" variant="ghost" onClick={() => setShowContactForm((open) => !open)}>
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            添加
+          </Button>
+        </div>
+
+        {showContactForm && (
+          <form onSubmit={handleAddContactRecord} className="mb-3 grid grid-cols-[130px_130px_1fr_auto] gap-2 items-end">
+            <div>
+              <Label className="text-xs">日期</Label>
+              <Input type="date" value={contactForm.date} onChange={(event) => setContactForm((prev) => ({ ...prev, date: event.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-xs">类型</Label>
+              <Select value={contactForm.type} onValueChange={(value) => setContactForm((prev) => ({ ...prev, type: value as ContactRecordType }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {contactRecordTypeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">内容</Label>
+              <Input value={contactForm.content} onChange={(event) => setContactForm((prev) => ({ ...prev, content: event.target.value }))} placeholder="记录联系内容" />
+            </div>
+            <Button type="submit" size="sm">保存</Button>
+          </form>
+        )}
+
+        {contactRecords.length > 0 ? (
+          <div className="space-y-2">
+            {contactRecords.map((record) => (
+              <div key={record.id} className="flex items-start gap-3 text-sm">
+                <div className="mt-1 h-2 w-2 rounded-full bg-primary flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{contactRecordTypeLabels[record.type]}</span>
+                    <span className="text-xs text-muted-foreground">{formatDateSafe(record.date, 'yyyy/MM/dd')}</span>
+                  </div>
+                  <p className="text-muted-foreground whitespace-pre-wrap break-words">{record.content}</p>
+                </div>
+                <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0" onClick={() => { void deleteContactRecord(record.id) }}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">暂无联系记录</p>
+        )}
+      </div>
 
       <div className="flex gap-2 pt-2 border-t">
         <Button size="sm" variant="outline" onClick={onEdit}><Edit2 className="h-4 w-4 mr-1" />编辑</Button>

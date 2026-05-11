@@ -15,6 +15,7 @@ model Institution {
   department      String
   tier            String    // REACH, MATCH, SAFETY
   degreeType      String    // MASTER, PHD
+  applicationStatus String  @default("WATCHING")
   campDeadline    DateTime?
   pushDeadline    DateTime?
   expectedQuota   Int?
@@ -46,6 +47,17 @@ model Advisor {
 
   assets          Asset[]
   interviews      Interview[]
+  contactRecords  ContactRecord[]
+}
+
+model ContactRecord {
+  id          String   @id @default(uuid())
+  advisorId   String
+  advisor     Advisor  @relation(fields: [advisorId], references: [id], onDelete: Cascade)
+  date        DateTime
+  type        String
+  content     String
+  createdAt   DateTime @default(now())
 }
 
 model Task {
