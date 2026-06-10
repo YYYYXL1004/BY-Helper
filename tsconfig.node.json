@@ -3,6 +3,7 @@
   "include": [
     "electron.vite.config.*",
     "electron/**/*",
+    "src/lib/aiOutreach.ts",
     "src/main/**/*",
     "src/preload/**/*"
   ],

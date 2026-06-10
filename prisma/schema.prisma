@@ -48,6 +48,9 @@ model Advisor {
   assets          Asset[]
   interviews      Interview[]
   contactRecords  ContactRecord[]
+  sources         AdvisorSource[]
+  insight         AdvisorInsight?
+  emailDrafts     EmailDraft[]
 }
 
 model ContactRecord {
@@ -98,6 +101,7 @@ model EmailTemplate {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   variables EmailVariable[]
+  drafts    EmailDraft[]
 }
 
 model EmailVariable {
@@ -106,4 +110,78 @@ model EmailVariable {
   templateId  String
   template    EmailTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
   createdAt   DateTime      @default(now())
+}
+
+model AiConfig {
+  id               String   @id @default("default")
+  baseUrl          String
+  model            String
+  apiKeyCiphertext String?
+  apiKeyPreview    String?
+  systemPrompt     String?
+  temperature      Float    @default(0.4)
+  maxTokens        Int      @default(2000)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model PersonalProfile {
+  id               String   @id @default("default")
+  name             String?
+  university       String?
+  major            String?
+  gpa              String?
+  rank             String?
+  researchInterest String?
+  projects         String?
+  achievements     String?
+  skills           String?
+  contact          String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model AdvisorSource {
+  id          String   @id @default(uuid())
+  advisorId   String
+  advisor     Advisor  @relation(fields: [advisorId], references: [id], onDelete: Cascade)
+  url         String
+  sourceType  String
+  title       String?
+  contentText String
+  status      String   @default("READY")
+  error       String?
+  fetchedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AdvisorInsight {
+  id                  String   @id @default(uuid())
+  advisorId           String   @unique
+  advisor             Advisor  @relation(fields: [advisorId], references: [id], onDelete: Cascade)
+  researchSummary     String
+  recentKeywords      String
+  representativeWorks String
+  fitAngles           String
+  emailHooks          String
+  cautions            String
+  rawJson             String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model EmailDraft {
+  id         String         @id @default(uuid())
+  advisorId  String
+  advisor    Advisor        @relation(fields: [advisorId], references: [id], onDelete: Cascade)
+  templateId String?
+  template   EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  subject    String
+  content    String
+  rationale  String?
+  checklist  String?
+  status     String         @default("DRAFT")
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
 }

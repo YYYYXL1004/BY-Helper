@@ -46,6 +46,28 @@ const mockApi = {
     create: vi.fn(),
     delete: vi.fn(),
   },
+  aiConfig: {
+    get: vi.fn(),
+    save: vi.fn(),
+    test: vi.fn(),
+  },
+  personalProfile: {
+    get: vi.fn(),
+    save: vi.fn(),
+  },
+  advisorSource: {
+    getByAdvisor: vi.fn(),
+    addUrl: vi.fn(),
+    delete: vi.fn(),
+  },
+  advisorInsight: {
+    generate: vi.fn(),
+  },
+  emailDraft: {
+    generate: vi.fn(),
+    getByAdvisor: vi.fn(),
+    markSent: vi.fn(),
+  },
 }
 
 // @ts-expect-error - we only mock the used properties
@@ -62,6 +84,8 @@ beforeEach(() => {
     error: null,
     conflictWarnings: [],
     emailTemplates: [],
+    aiConfig: null,
+    personalProfile: null,
   })
 })
 

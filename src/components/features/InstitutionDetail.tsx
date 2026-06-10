@@ -6,8 +6,8 @@
  * @Date: 2026-04-08
  * Copyright (c) 2026. All rights reserved.
  */
-import { useState, useEffect } from 'react'
-import { ArrowLeft, Building2, Users, Edit2, Trash2, Plus, Mail, ExternalLink, FileText, CheckCircle2, Circle, AlertTriangle, ArrowRight, ChevronDown, Check, GripVertical } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { ArrowLeft, Building2, Users, Edit2, Trash2, Plus, Mail, ExternalLink, FileText, CheckCircle2, Circle, AlertTriangle, ArrowRight, ChevronDown, Check, GripVertical, Bot } from 'lucide-react'
 import { useStore, Advisor, Asset, ContactRecord, ContactRecordInput, Task } from '../../stores/appStore'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
@@ -23,10 +23,17 @@ import AdvisorForm from './AdvisorForm'
 import TaskForm from './TaskForm'
 import InterviewForm from './InterviewForm'
 import InstitutionForm from './InstitutionForm'
+import AiOutreachAssistant from './AiOutreachAssistant'
 
 interface InstitutionDetailProps {
   institutionId: string
   onBack: () => void
+  targetAdvisorId?: string | null
+  onTargetAdvisorHandled?: () => void
+}
+
+function getAdvisorElementId(advisorId: string): string {
+  return `advisor-detail-${advisorId}`
 }
 
 function renderStarRating(score: number | null | undefined): string | null {
@@ -36,11 +43,12 @@ function renderStarRating(score: number | null | undefined): string | null {
   return `${'★'.repeat(normalized)}${'☆'.repeat(5 - normalized)}`
 }
 
-export default function InstitutionDetail({ institutionId, onBack }: InstitutionDetailProps): JSX.Element {
+export default function InstitutionDetail({ institutionId, onBack, targetAdvisorId, onTargetAdvisorHandled }: InstitutionDetailProps): JSX.Element {
   const { institutions, isLoading, deleteInstitution, updateInstitution, updateTask, deleteTask, updateAdvisor, reorderAdvisors, addAsset, addContactRecord, deleteContactRecord, conflictWarnings, checkConflicts } = useStore()
   const [showAdvisorForm, setShowAdvisorForm] = useState(false)
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [showInterviewForm, setShowInterviewForm] = useState(false)
+  const [showAiAssistant, setShowAiAssistant] = useState(false)
   const [showEditForm, setShowEditForm] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showTaskDeleteConfirm, setShowTaskDeleteConfirm] = useState(false)
@@ -48,7 +56,9 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
   const [selectedAdvisor, setSelectedAdvisor] = useState<Advisor | null>(null)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [activeTab, setActiveTab] = useState('overview')
+  const [advisorSortMode, setAdvisorSortMode] = useState(false)
   const [draggedAdvisorId, setDraggedAdvisorId] = useState<string | null>(null)
+  const [highlightAdvisorId, setHighlightAdvisorId] = useState<string | null>(null)
 
   const institution = institutions.find((i) => i.id === institutionId)
 
@@ -57,6 +67,25 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
       void checkConflicts(institutionId)
     }
   }, [institutionId, checkConflicts])
+
+  useEffect(() => {
+    if (!targetAdvisorId || !institution?.advisors?.some((advisor) => advisor.id === targetAdvisorId)) return
+
+    setActiveTab('advisors')
+    setHighlightAdvisorId(targetAdvisorId)
+
+    window.setTimeout(() => {
+      const element = document.getElementById(getAdvisorElementId(targetAdvisorId))
+      element?.scrollIntoView?.({ block: 'center' })
+      onTargetAdvisorHandled?.()
+    }, 0)
+
+    const highlightTimer = window.setTimeout(() => {
+      setHighlightAdvisorId((current) => current === targetAdvisorId ? null : current)
+    }, 1800)
+
+    return () => window.clearTimeout(highlightTimer)
+  }, [targetAdvisorId, institution, onTargetAdvisorHandled])
 
   if (!institution) {
     if (isLoading) {
@@ -93,8 +122,22 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
     await updateInstitution(institutionId, { applicationStatus: status })
   }
 
+  const handleTabChange = (nextTab: string): void => {
+    setActiveTab(nextTab)
+
+    if (nextTab !== 'advisors') {
+      setAdvisorSortMode(false)
+      setDraggedAdvisorId(null)
+    }
+  }
+
+  const handleAdvisorSortModeToggle = (): void => {
+    setAdvisorSortMode((prev) => !prev)
+    setDraggedAdvisorId(null)
+  }
+
   const handleAdvisorDrop = async (targetId: string | null): Promise<void> => {
-    if (!draggedAdvisorId || !institution.advisors) return
+    if (!advisorSortMode || !draggedAdvisorId || !institution.advisors) return
 
     const currentIds = institution.advisors.map((advisor) => advisor.id)
     if (!currentIds.includes(draggedAdvisorId)) return
@@ -110,6 +153,7 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
   const policyTags = parsePolicyTags(institution.policyTags)
   const advisorPreviewCount = institution.advisors?.length ?? 0
   const applicationStatus = (institution.applicationStatus || 'WATCHING') as ApplicationStatus
+  const canReorderAdvisors = (institution.advisors?.length ?? 0) > 1
 
   // 构建删除确认描述
   const advisorCount = institution.advisors?.length || 0
@@ -193,7 +237,7 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
       )}
 
       <div className="flex-1 overflow-auto">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="h-full">
           <div className="px-4 pt-4">
             <TabsList>
               <TabsTrigger value="overview">总览</TabsTrigger>
@@ -357,34 +401,65 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
           </TabsContent>
 
           <TabsContent value="advisors" className="p-4">
+            {canReorderAdvisors && (
+              <div className="mb-4 flex justify-end">
+                <Button variant={advisorSortMode ? 'default' : 'outline'} size="sm" onClick={handleAdvisorSortModeToggle}>
+                  <GripVertical className="mr-1.5 h-4 w-4" />
+                  {advisorSortMode ? '完成排序' : '调整顺序'}
+                </Button>
+              </div>
+            )}
             {institution.advisors && institution.advisors.length > 0 ? (
               <div
                 className="space-y-4"
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => {
+                onDragOver={advisorSortMode ? (event) => event.preventDefault() : undefined}
+                onDrop={advisorSortMode ? (event) => {
                   event.preventDefault()
                   void handleAdvisorDrop(null)
-                }}
+                } : undefined}
               >
                 {institution.advisors.map((advisor) => (
                   <div
                     key={advisor.id}
-                    draggable
-                    onDragStart={(event) => {
-                      event.dataTransfer.effectAllowed = 'move'
-                      setDraggedAdvisorId(advisor.id)
-                    }}
-                    onDragEnd={() => setDraggedAdvisorId(null)}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={(event) => {
+                    id={getAdvisorElementId(advisor.id)}
+                    onDragOver={advisorSortMode ? (event) => event.preventDefault() : undefined}
+                    onDrop={advisorSortMode ? (event) => {
                       event.preventDefault()
                       event.stopPropagation()
                       void handleAdvisorDrop(advisor.id)
-                    }}
-                    className={`group relative ${draggedAdvisorId === advisor.id ? 'opacity-50' : ''}`}
+                    } : undefined}
+                    className={`group relative rounded-xl transition-all ${
+                      draggedAdvisorId === advisor.id ? 'opacity-50' : ''
+                    } ${
+                      highlightAdvisorId === advisor.id ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''
+                    }`}
                   >
-                    <GripVertical className="absolute right-3 top-3 h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 pointer-events-none" />
-                    <AdvisorCard advisor={advisor} onEdit={() => { setSelectedAdvisor(advisor); setShowAdvisorForm(true) }} onAddInterview={() => { setSelectedAdvisor(advisor); setShowInterviewForm(true) }} updateAdvisor={updateAdvisor} addAsset={addAsset} addContactRecord={addContactRecord} deleteContactRecord={deleteContactRecord} />
+                    <AdvisorCard
+                      advisor={advisor}
+                      dragHandle={advisorSortMode ? (
+                        <button
+                          type="button"
+                          aria-label="拖动排序"
+                          title="拖动排序"
+                          draggable
+                          onDragStart={(event) => {
+                            event.dataTransfer.effectAllowed = 'move'
+                            setDraggedAdvisorId(advisor.id)
+                          }}
+                          onDragEnd={() => setDraggedAdvisorId(null)}
+                          className="inline-flex h-8 w-8 cursor-grab items-center justify-center rounded-md border border-dashed border-border text-muted-foreground transition-colors hover:bg-muted active:cursor-grabbing"
+                        >
+                          <GripVertical className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                      onEdit={() => { setSelectedAdvisor(advisor); setShowAdvisorForm(true) }}
+                      onAddInterview={() => { setSelectedAdvisor(advisor); setShowInterviewForm(true) }}
+                      onOpenAiAssistant={() => { setSelectedAdvisor(advisor); setShowAiAssistant(true) }}
+                      updateAdvisor={updateAdvisor}
+                      addAsset={addAsset}
+                      addContactRecord={addContactRecord}
+                      deleteContactRecord={deleteContactRecord}
+                    />
                   </div>
                 ))}
               </div>
@@ -428,22 +503,33 @@ export default function InstitutionDetail({ institutionId, onBack }: Institution
       {showAdvisorForm && <AdvisorForm institutionId={institutionId} advisor={selectedAdvisor} onClose={() => { setShowAdvisorForm(false); setSelectedAdvisor(null) }} />}
       {showTaskForm && <TaskForm institutionId={institutionId} task={selectedTask} onClose={() => { setShowTaskForm(false); setSelectedTask(null) }} />}
       {showInterviewForm && selectedAdvisor && <InterviewForm advisorId={selectedAdvisor.id} onClose={() => { setShowInterviewForm(false); setSelectedAdvisor(null) }} />}
+      {showAiAssistant && selectedAdvisor && (
+        <AiOutreachAssistant
+          advisor={institution.advisors?.find((advisor) => advisor.id === selectedAdvisor.id) || selectedAdvisor}
+          open={showAiAssistant}
+          onOpenChange={(open) => {
+            setShowAiAssistant(open)
+            if (!open) setSelectedAdvisor(null)
+          }}
+        />
+      )}
       {showEditForm && <InstitutionForm institution={institution} onClose={() => setShowEditForm(false)} onSuccess={() => { setShowEditForm(false) }} />}
     </div>
   )
 }
-
 interface AdvisorCardProps {
   advisor: Advisor
+  dragHandle?: React.ReactNode
   onEdit: () => void
   onAddInterview: () => void
+  onOpenAiAssistant: () => void
   updateAdvisor: (id: string, data: Partial<Advisor>) => Promise<void>
   addAsset: (data: Omit<Asset, 'id'>) => Promise<Asset>
   addContactRecord: (data: ContactRecordInput) => Promise<ContactRecord>
   deleteContactRecord: (id: string) => Promise<void>
 }
 
-function AdvisorCard({ advisor, onEdit, onAddInterview, updateAdvisor, addAsset, addContactRecord, deleteContactRecord }: AdvisorCardProps): JSX.Element {
+function AdvisorCard({ advisor, dragHandle, onEdit, onAddInterview, onOpenAiAssistant, updateAdvisor, addAsset, addContactRecord, deleteContactRecord }: AdvisorCardProps): JSX.Element {
   const [showAssets, setShowAssets] = useState(false)
   const [showContactForm, setShowContactForm] = useState(false)
   const [contactForm, setContactForm] = useState({
@@ -492,28 +578,31 @@ function AdvisorCard({ advisor, onEdit, onAddInterview, updateAdvisor, addAsset,
           <h4 className="font-semibold">{advisor.name}</h4>
           <p className="text-sm text-muted-foreground">{advisor.title || '无职称'}</p>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border border-transparent cursor-pointer hover:opacity-80 transition-opacity ${currentStatus.badge}`}>
-              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${currentStatus.dot}`} />
-              {currentStatus.label}
-              <ChevronDown className="h-3 w-3 opacity-60" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-[120px]">
-            {Object.entries(advisorStatusConfig).map(([key, config]) => (
-              <DropdownMenuItem
-                key={key}
-                onSelect={() => handleStatusChange(key)}
-                className="flex items-center gap-2.5 cursor-pointer"
-              >
-                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${config.dot}`} />
-                <span className="flex-1">{config.label}</span>
-                {advisor.contactStatus === key && <Check className="h-3.5 w-3.5 text-primary flex-shrink-0" />}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-start gap-2">
+          {dragHandle}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border border-transparent cursor-pointer hover:opacity-80 transition-opacity ${currentStatus.badge}`}>
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${currentStatus.dot}`} />
+                {currentStatus.label}
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[120px]">
+              {Object.entries(advisorStatusConfig).map(([key, config]) => (
+                <DropdownMenuItem
+                  key={key}
+                  onSelect={() => handleStatusChange(key)}
+                  className="flex items-center gap-2.5 cursor-pointer"
+                >
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${config.dot}`} />
+                  <span className="flex-1">{config.label}</span>
+                  {advisor.contactStatus === key && <Check className="h-3.5 w-3.5 text-primary flex-shrink-0" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       <div className="space-y-2 text-sm mb-3">
@@ -614,6 +703,7 @@ function AdvisorCard({ advisor, onEdit, onAddInterview, updateAdvisor, addAsset,
 
       <div className="flex gap-2 pt-2 border-t">
         <Button size="sm" variant="outline" onClick={onEdit}><Edit2 className="h-4 w-4 mr-1" />编辑</Button>
+        <Button size="sm" variant="outline" onClick={onOpenAiAssistant}><Bot className="h-4 w-4 mr-1" />AI 套磁</Button>
         <Button size="sm" variant="outline" onClick={() => handleSelectFile(advisor.id, 'RESUME')}><FileText className="h-4 w-4 mr-1" />绑定文件</Button>
         <Button size="sm" variant="outline" onClick={onAddInterview}><Plus className="h-4 w-4 mr-1" />记录面经</Button>
       </div>

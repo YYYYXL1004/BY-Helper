@@ -1,7 +1,7 @@
 /**
  * @Project: PG-Tracker
  * @File: appStore.ts
- * @Description: 应用全局状态管理，通过 Zustand 管理院校、导师、任务、邮件模板等数据的增删改查及 UI 状态
+ * @Description: 应用全局状态管理，通过 Zustand 管理院校、导师、任务、AI 套磁等数据及 UI 状态
  * @Author: 杨敬诚
  * @Date: 2026-04-08
  * Copyright (c) 2026. All rights reserved.
@@ -43,6 +43,9 @@ export interface Advisor {
   assets?: Asset[]
   interviews?: Interview[]
   contactRecords?: ContactRecord[]
+  sources?: AdvisorSource[]
+  insight?: AdvisorInsight | null
+  emailDrafts?: EmailDraft[]
 }
 
 export interface Task {
@@ -75,6 +78,85 @@ export interface ContactRecord {
   type: ContactRecordType
   content: string
   createdAt?: string
+}
+
+export interface AdvisorSource {
+  id: string
+  advisorId: string
+  url: string
+  sourceType: 'WEB' | 'PDF' | 'ARXIV' | 'DBLP' | 'SEMANTIC_SCHOLAR' | string
+  title: string | null
+  contentText: string
+  status: 'READY' | 'ERROR' | string
+  error: string | null
+  fetchedAt: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface AdvisorInsight {
+  id: string
+  advisorId: string
+  researchSummary: string
+  recentKeywords: string
+  representativeWorks: string
+  fitAngles: string
+  emailHooks: string
+  cautions: string
+  rawJson: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface EmailDraft {
+  id: string
+  advisorId: string
+  templateId: string | null
+  subject: string
+  content: string
+  rationale: string | null
+  checklist: string | null
+  status: 'DRAFT' | 'SENT' | string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface EmailDraftInput {
+  advisorId: string
+  sourceEmail: string
+}
+
+export interface AiConfig {
+  id?: string
+  baseUrl: string
+  model: string
+  apiKeyPreview?: string | null
+  systemPrompt?: string | null
+  temperature?: number
+  maxTokens?: number
+}
+
+export interface AiConfigInput {
+  baseUrl: string
+  model: string
+  apiKey?: string
+  systemPrompt?: string | null
+  temperature?: number
+  maxTokens?: number
+}
+
+export interface PersonalProfile {
+  id?: string
+  name?: string | null
+  university?: string | null
+  major?: string | null
+  gpa?: string | null
+  rank?: string | null
+  researchInterest?: string | null
+  projects?: string | null
+  achievements?: string | null
+  skills?: string | null
+  contact?: string | null
 }
 
 export interface ContactRecordInput {
@@ -144,7 +226,7 @@ export interface InterviewInput {
   markdownNotes: string
 }
 
-type View = 'dashboard' | 'kanban' | 'timeline' | 'templates' | 'settings'
+type View = 'dashboard' | 'kanban' | 'advisors' | 'aiOutreach' | 'timeline' | 'settings'
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -159,6 +241,8 @@ interface AppState {
   error: string | null
   conflictWarnings: string[]
   emailTemplates: EmailTemplate[]
+  aiConfig: AiConfig | null
+  personalProfile: PersonalProfile | null
   setView: (view: View) => void
   setSelectedInstitutionId: (id: string | null) => void
   loadInstitutions: () => Promise<void>
@@ -189,6 +273,16 @@ interface AppState {
   deleteEmailTemplate: (id: string) => Promise<void>
   createEmailVariable: (data: { name: string; templateId: string }) => Promise<EmailVariable>
   deleteEmailVariable: (id: string) => Promise<void>
+  loadAiConfig: () => Promise<void>
+  saveAiConfig: (data: AiConfigInput) => Promise<AiConfig>
+  testAiConfig: () => Promise<void>
+  loadPersonalProfile: () => Promise<void>
+  savePersonalProfile: (data: PersonalProfile) => Promise<PersonalProfile>
+  addAdvisorSource: (advisorId: string, url: string) => Promise<AdvisorSource>
+  deleteAdvisorSource: (id: string) => Promise<void>
+  generateAdvisorInsight: (advisorId: string) => Promise<AdvisorInsight>
+  generateEmailDraft: (data: EmailDraftInput) => Promise<EmailDraft>
+  markEmailDraftSent: (id: string) => Promise<void>
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -200,6 +294,8 @@ export const useStore = create<AppState>((set, get) => ({
   error: null,
   conflictWarnings: [],
   emailTemplates: [],
+  aiConfig: null,
+  personalProfile: null,
 
   setView: (view) => set({ currentView: view }),
   setSelectedInstitutionId: (id) => set({ selectedInstitutionId: id }),
@@ -534,6 +630,140 @@ export const useStore = create<AppState>((set, get) => ({
         throw new Error(result.error)
       }
       await get().loadEmailTemplates()
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
+      throw error
+    }
+  },
+
+  loadAiConfig: async () => {
+    try {
+      const result = await window.api.aiConfig.get()
+      if (!result.success) {
+        set({ error: result.error })
+        return
+      }
+      set({ aiConfig: result.data || null })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
+    }
+  },
+
+  saveAiConfig: async (data) => {
+    try {
+      const result = await window.api.aiConfig.save(data)
+      if (!result.success || !result.data) {
+        throw new Error(result.error || 'AI 配置保存失败')
+      }
+      set({ aiConfig: result.data })
+      return result.data
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
+      throw error
+    }
+  },
+
+  testAiConfig: async () => {
+    try {
+      const result = await window.api.aiConfig.test()
+      if (!result.success) {
+        throw new Error(result.error || 'AI 连接测试失败')
+      }
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
+      throw error
+    }
+  },
+
+  loadPersonalProfile: async () => {
+    try {
+      const result = await window.api.personalProfile.get()
+      if (!result.success) {
+        set({ error: result.error })
+        return
+      }
+      set({ personalProfile: result.data || null })
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
+    }
+  },
+
+  savePersonalProfile: async (data) => {
+    try {
+      const result = await window.api.personalProfile.save(data)
+      if (!result.success || !result.data) {
+        throw new Error(result.error || '个人背景保存失败')
+      }
+      set({ personalProfile: result.data })
+      return result.data
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
+      throw error
+    }
+  },
+
+  addAdvisorSource: async (advisorId, url) => {
+    try {
+      const result = await window.api.advisorSource.addUrl(advisorId, url)
+      if (!result.success || !result.data) {
+        throw new Error(result.error || '导师资料读取失败')
+      }
+      await get().loadInstitutions()
+      return result.data
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
+      throw error
+    }
+  },
+
+  deleteAdvisorSource: async (id) => {
+    try {
+      const result = await window.api.advisorSource.delete(id)
+      if (!result.success) {
+        throw new Error(result.error || '导师资料删除失败')
+      }
+      await get().loadInstitutions()
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
+      throw error
+    }
+  },
+
+  generateAdvisorInsight: async (advisorId) => {
+    try {
+      const result = await window.api.advisorInsight.generate(advisorId)
+      if (!result.success || !result.data) {
+        throw new Error(result.error || '导师画像生成失败')
+      }
+      await get().loadInstitutions()
+      return result.data
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
+      throw error
+    }
+  },
+
+  generateEmailDraft: async (data) => {
+    try {
+      const result = await window.api.emailDraft.generate(data)
+      if (!result.success || !result.data) {
+        throw new Error(result.error || '套磁草稿生成失败')
+      }
+      await get().loadInstitutions()
+      return result.data
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) })
+      throw error
+    }
+  },
+
+  markEmailDraftSent: async (id) => {
+    try {
+      const result = await window.api.emailDraft.markSent(id)
+      if (!result.success) {
+        throw new Error(result.error || '标记已发送失败')
+      }
+      await get().loadInstitutions()
     } catch (error: unknown) {
       set({ error: getErrorMessage(error) })
       throw error

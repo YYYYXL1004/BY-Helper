@@ -29,6 +29,7 @@ export default function KanbanBoard({ onSelectInstitution }: KanbanBoardProps): 
   const [showForm, setShowForm] = useState(false)
   const [editingInstitution, setEditingInstitution] = useState<Institution | null>(null)
   const [activeTab, setActiveTab] = useState('all')
+  const [sortMode, setSortMode] = useState(false)
   const [draggedInstitution, setDraggedInstitution] = useState<{ id: string; tier: Institution['tier'] } | null>(null)
 
   const reachSchools = institutions.filter((i) => i.tier === 'REACH')
@@ -40,10 +41,24 @@ export default function KanbanBoard({ onSelectInstitution }: KanbanBoardProps): 
     setShowForm(true)
   }
 
-  const handleInstitutionDrop = async (tier: Institution['tier'], targetId: string | null): Promise<void> => {
-    if (!draggedInstitution || draggedInstitution.tier !== tier) return
+  const handleTabChange = (nextTab: string): void => {
+    setActiveTab(nextTab)
+    setSortMode(false)
+    setDraggedInstitution(null)
+  }
 
-    const currentIds = institutions.filter((institution) => institution.tier === tier).map((institution) => institution.id)
+  const handleSortModeToggle = (): void => {
+    setSortMode((prev) => !prev)
+    setDraggedInstitution(null)
+  }
+
+  const handleInstitutionDrop = async (tier: Institution['tier'], targetId: string | null): Promise<void> => {
+    if (!sortMode || !draggedInstitution || draggedInstitution.tier !== tier) return
+
+    const currentIds = institutions
+      .filter((institution) => institution.tier === tier)
+      .map((institution) => institution.id)
+
     if (!currentIds.includes(draggedInstitution.id)) return
 
     const nextIds = currentIds.filter((id) => id !== draggedInstitution.id)
@@ -61,14 +76,20 @@ export default function KanbanBoard({ onSelectInstitution }: KanbanBoardProps): 
           <h2 className="text-2xl font-bold">院校申请看板</h2>
           <p className="text-sm text-muted-foreground">管理你的保研目标院校</p>
         </div>
-        <Button onClick={() => setShowForm(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          添加院校
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant={sortMode ? 'default' : 'outline'} onClick={handleSortModeToggle}>
+            <GripVertical className="w-4 h-4 mr-2" />
+            {sortMode ? '完成排序' : '调整顺序'}
+          </Button>
+          <Button onClick={() => setShowForm(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            添加院校
+          </Button>
+        </div>
       </header>
 
       <div className="flex-1 overflow-hidden">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="h-full flex flex-col">
           <div className="px-4 pt-4">
             <TabsList>
               <TabsTrigger value="all">全部 ({institutions.length})</TabsTrigger>
@@ -80,20 +101,89 @@ export default function KanbanBoard({ onSelectInstitution }: KanbanBoardProps): 
 
           <TabsContent value="all" className="flex-1 overflow-auto p-4">
             <div className="grid grid-cols-3 gap-4 h-full">
-              <KanbanColumn tier="REACH" schools={reachSchools} config={tierConfig.REACH} onSelect={onSelectInstitution} onEdit={handleEdit} draggedId={draggedInstitution?.id ?? null} onDragStart={setDraggedInstitution} onDragEnd={() => setDraggedInstitution(null)} onDropInstitution={handleInstitutionDrop} />
-              <KanbanColumn tier="MATCH" schools={matchSchools} config={tierConfig.MATCH} onSelect={onSelectInstitution} onEdit={handleEdit} draggedId={draggedInstitution?.id ?? null} onDragStart={setDraggedInstitution} onDragEnd={() => setDraggedInstitution(null)} onDropInstitution={handleInstitutionDrop} />
-              <KanbanColumn tier="SAFETY" schools={safetySchools} config={tierConfig.SAFETY} onSelect={onSelectInstitution} onEdit={handleEdit} draggedId={draggedInstitution?.id ?? null} onDragStart={setDraggedInstitution} onDragEnd={() => setDraggedInstitution(null)} onDropInstitution={handleInstitutionDrop} />
+              <KanbanColumn
+                tier="REACH"
+                schools={reachSchools}
+                config={tierConfig.REACH}
+                onSelect={onSelectInstitution}
+                onEdit={handleEdit}
+                sortMode={sortMode}
+                draggedId={draggedInstitution?.id ?? null}
+                onDragStart={setDraggedInstitution}
+                onDragEnd={() => setDraggedInstitution(null)}
+                onDropInstitution={handleInstitutionDrop}
+              />
+              <KanbanColumn
+                tier="MATCH"
+                schools={matchSchools}
+                config={tierConfig.MATCH}
+                onSelect={onSelectInstitution}
+                onEdit={handleEdit}
+                sortMode={sortMode}
+                draggedId={draggedInstitution?.id ?? null}
+                onDragStart={setDraggedInstitution}
+                onDragEnd={() => setDraggedInstitution(null)}
+                onDropInstitution={handleInstitutionDrop}
+              />
+              <KanbanColumn
+                tier="SAFETY"
+                schools={safetySchools}
+                config={tierConfig.SAFETY}
+                onSelect={onSelectInstitution}
+                onEdit={handleEdit}
+                sortMode={sortMode}
+                draggedId={draggedInstitution?.id ?? null}
+                onDragStart={setDraggedInstitution}
+                onDragEnd={() => setDraggedInstitution(null)}
+                onDropInstitution={handleInstitutionDrop}
+              />
             </div>
           </TabsContent>
 
           <TabsContent value="reach" className="flex-1 overflow-auto p-4">
-            <KanbanColumn tier="REACH" schools={reachSchools} config={tierConfig.REACH} onSelect={onSelectInstitution} onEdit={handleEdit} fullHeight draggedId={draggedInstitution?.id ?? null} onDragStart={setDraggedInstitution} onDragEnd={() => setDraggedInstitution(null)} onDropInstitution={handleInstitutionDrop} />
+            <KanbanColumn
+              tier="REACH"
+              schools={reachSchools}
+              config={tierConfig.REACH}
+              onSelect={onSelectInstitution}
+              onEdit={handleEdit}
+              sortMode={sortMode}
+              fullHeight
+              draggedId={draggedInstitution?.id ?? null}
+              onDragStart={setDraggedInstitution}
+              onDragEnd={() => setDraggedInstitution(null)}
+              onDropInstitution={handleInstitutionDrop}
+            />
           </TabsContent>
           <TabsContent value="match" className="flex-1 overflow-auto p-4">
-            <KanbanColumn tier="MATCH" schools={matchSchools} config={tierConfig.MATCH} onSelect={onSelectInstitution} onEdit={handleEdit} fullHeight draggedId={draggedInstitution?.id ?? null} onDragStart={setDraggedInstitution} onDragEnd={() => setDraggedInstitution(null)} onDropInstitution={handleInstitutionDrop} />
+            <KanbanColumn
+              tier="MATCH"
+              schools={matchSchools}
+              config={tierConfig.MATCH}
+              onSelect={onSelectInstitution}
+              onEdit={handleEdit}
+              sortMode={sortMode}
+              fullHeight
+              draggedId={draggedInstitution?.id ?? null}
+              onDragStart={setDraggedInstitution}
+              onDragEnd={() => setDraggedInstitution(null)}
+              onDropInstitution={handleInstitutionDrop}
+            />
           </TabsContent>
           <TabsContent value="safety" className="flex-1 overflow-auto p-4">
-            <KanbanColumn tier="SAFETY" schools={safetySchools} config={tierConfig.SAFETY} onSelect={onSelectInstitution} onEdit={handleEdit} fullHeight draggedId={draggedInstitution?.id ?? null} onDragStart={setDraggedInstitution} onDragEnd={() => setDraggedInstitution(null)} onDropInstitution={handleInstitutionDrop} />
+            <KanbanColumn
+              tier="SAFETY"
+              schools={safetySchools}
+              config={tierConfig.SAFETY}
+              onSelect={onSelectInstitution}
+              onEdit={handleEdit}
+              sortMode={sortMode}
+              fullHeight
+              draggedId={draggedInstitution?.id ?? null}
+              onDragStart={setDraggedInstitution}
+              onDragEnd={() => setDraggedInstitution(null)}
+              onDropInstitution={handleInstitutionDrop}
+            />
           </TabsContent>
         </Tabs>
       </div>
@@ -119,6 +209,7 @@ interface KanbanColumnProps {
   config: { label: string; color: string; borderColor: string }
   onSelect: (id: string) => void
   onEdit: (institution: Institution) => void
+  sortMode: boolean
   draggedId: string | null
   onDragStart: (institution: { id: string; tier: Institution['tier'] }) => void
   onDragEnd: () => void
@@ -126,7 +217,19 @@ interface KanbanColumnProps {
   fullHeight?: boolean
 }
 
-function KanbanColumn({ tier, schools, config, onSelect, onEdit, draggedId, onDragStart, onDragEnd, onDropInstitution, fullHeight }: KanbanColumnProps): JSX.Element {
+function KanbanColumn({
+  tier,
+  schools,
+  config,
+  onSelect,
+  onEdit,
+  sortMode,
+  draggedId,
+  onDragStart,
+  onDragEnd,
+  onDropInstitution,
+  fullHeight
+}: KanbanColumnProps): JSX.Element {
   const tierLabels = { REACH: '冲', MATCH: '稳', SAFETY: '保' }
   const tierDescs = { REACH: '超出自身水平，但值得一试', MATCH: '匹配自身水平', SAFETY: '保底选择' }
 
@@ -134,37 +237,55 @@ function KanbanColumn({ tier, schools, config, onSelect, onEdit, draggedId, onDr
     <div className={`flex flex-col bg-muted/30 rounded-lg ${fullHeight ? 'h-full min-h-[400px]' : 'min-h-[200px]'}`}>
       <div className={`p-3 border-b-2 ${config.borderColor}`}>
         <h3 className={`font-bold ${config.color}`}>
-          {config.label} — {tierLabels[tier]} ({schools.length})
+          {config.label} - {tierLabels[tier]} ({schools.length})
         </h3>
         <p className="text-xs text-muted-foreground mt-0.5">{tierDescs[tier]}</p>
       </div>
       <div
         className="flex-1 p-2 space-y-2 overflow-auto"
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={(event) => {
+        onDragOver={sortMode ? (event) => event.preventDefault() : undefined}
+        onDrop={sortMode ? (event) => {
           event.preventDefault()
           void onDropInstitution(tier, null)
-        }}
+        } : undefined}
       >
         {schools.map((school) => (
           <div
             key={school.id}
-            draggable
-            onDragStart={(event) => {
-              event.dataTransfer.effectAllowed = 'move'
-              onDragStart({ id: school.id, tier })
-            }}
-            onDragEnd={onDragEnd}
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => {
+            onDragOver={sortMode ? (event) => event.preventDefault() : undefined}
+            onDrop={sortMode ? (event) => {
               event.preventDefault()
               event.stopPropagation()
               void onDropInstitution(tier, school.id)
-            }}
+            } : undefined}
             className={`group relative ${draggedId === school.id ? 'opacity-50' : ''}`}
           >
-            <GripVertical className="absolute right-2 top-2 h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 pointer-events-none" />
-            <InstitutionCard institution={school} onClick={() => onSelect(school.id)} onEdit={() => onEdit(school)} />
+            <InstitutionCard
+              institution={school}
+              dragHandle={sortMode ? (
+                <button
+                  type="button"
+                  aria-label="拖动排序"
+                  title="拖动排序"
+                  draggable
+                  onDragStart={(event) => {
+                    event.stopPropagation()
+                    event.dataTransfer.effectAllowed = 'move'
+                    onDragStart({ id: school.id, tier })
+                  }}
+                  onDragEnd={(event) => {
+                    event.stopPropagation()
+                    onDragEnd()
+                  }}
+                  onClick={(event) => event.stopPropagation()}
+                  className="inline-flex h-7 w-7 cursor-grab items-center justify-center rounded-md border border-dashed border-border text-muted-foreground transition-colors hover:bg-muted active:cursor-grabbing"
+                >
+                  <GripVertical className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+              onClick={() => onSelect(school.id)}
+              onEdit={() => onEdit(school)}
+            />
           </div>
         ))}
         {schools.length === 0 && (

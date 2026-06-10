@@ -6,7 +6,7 @@
  * @Date: 2026-04-08
  * Copyright (c) 2026. All rights reserved.
  */
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useStore } from './stores/appStore'
 import ThemeProvider from './components/ThemeProvider'
@@ -15,24 +15,34 @@ import Sidebar from './components/layout/Sidebar'
 import KanbanBoard from './components/features/KanbanBoard'
 import InstitutionDetail from './components/features/InstitutionDetail'
 import Timeline from './components/features/Timeline'
-import EmailTemplates from './components/features/EmailTemplates'
 import Settings from './components/features/Settings'
 import Dashboard from './components/features/Dashboard'
 import UpdateNotification from './components/features/UpdateNotification'
+import AdvisorOverview from './components/features/AdvisorOverview'
+import AiOutreachWorkspace from './components/features/AiOutreachWorkspace'
 
 function App(): JSX.Element {
   const { currentView, selectedInstitutionId, setView, setSelectedInstitutionId, loadInstitutions, institutions, isLoading } = useStore()
+  const [targetAdvisorId, setTargetAdvisorId] = useState<string | null>(null)
 
   useEffect(() => {
     loadInstitutions()
   }, [loadInstitutions])
 
   const handleSelectInstitution = (id: string | null): void => {
+    setTargetAdvisorId(null)
     setSelectedInstitutionId(id)
     if (id) setView('kanban')
   }
 
+  const handleSelectAdvisor = (institutionId: string, advisorId: string): void => {
+    setTargetAdvisorId(advisorId)
+    setSelectedInstitutionId(institutionId)
+    setView('kanban')
+  }
+
   const handleBackToKanban = (): void => {
+    setTargetAdvisorId(null)
     setSelectedInstitutionId(null)
     setView('kanban')
   }
@@ -53,7 +63,14 @@ function App(): JSX.Element {
     if (selectedInstitutionId) {
       const exists = institutions.some((i) => i.id === selectedInstitutionId)
       if (exists) {
-        return <InstitutionDetail institutionId={selectedInstitutionId} onBack={handleBackToKanban} />
+        return (
+          <InstitutionDetail
+            institutionId={selectedInstitutionId}
+            onBack={handleBackToKanban}
+            targetAdvisorId={targetAdvisorId}
+            onTargetAdvisorHandled={() => setTargetAdvisorId(null)}
+          />
+        )
       }
       // institution not loaded yet, show kanban
       return <KanbanBoard onSelectInstitution={handleSelectInstitution} />
@@ -64,8 +81,10 @@ function App(): JSX.Element {
         return <Dashboard />
       case 'timeline':
         return <Timeline institutions={institutions} />
-      case 'templates':
-        return <EmailTemplates />
+      case 'advisors':
+        return <AdvisorOverview institutions={institutions} onSelectInstitution={handleSelectInstitution} onSelectAdvisor={handleSelectAdvisor} />
+      case 'aiOutreach':
+        return <AiOutreachWorkspace institutions={institutions} />
       case 'settings':
         return <Settings />
       case 'kanban':

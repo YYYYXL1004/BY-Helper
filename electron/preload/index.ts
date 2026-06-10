@@ -84,6 +84,28 @@ interface UpdateStatus {
   error?: string
 }
 
+interface AiConfigInput {
+  baseUrl: string
+  model: string
+  apiKey?: string
+  systemPrompt?: string | null
+  temperature?: number
+  maxTokens?: number
+}
+
+interface PersonalProfileInput {
+  name?: string | null
+  university?: string | null
+  major?: string | null
+  gpa?: string | null
+  rank?: string | null
+  researchInterest?: string | null
+  projects?: string | null
+  achievements?: string | null
+  skills?: string | null
+  contact?: string | null
+}
+
 // Electron API exposed to renderer
 const electronAPI = {
   platform: process.platform
@@ -144,6 +166,28 @@ const api = {
     getByTemplate: (templateId: string) => ipcRenderer.invoke('emailVariable:getByTemplate', templateId),
     create: (data: { name: string; templateId: string }) => ipcRenderer.invoke('emailVariable:create', data),
     delete: (id: string) => ipcRenderer.invoke('emailVariable:delete', id)
+  },
+  aiConfig: {
+    get: () => ipcRenderer.invoke('aiConfig:get'),
+    save: (data: AiConfigInput) => ipcRenderer.invoke('aiConfig:save', data),
+    test: () => ipcRenderer.invoke('aiConfig:test')
+  },
+  personalProfile: {
+    get: () => ipcRenderer.invoke('personalProfile:get'),
+    save: (data: PersonalProfileInput) => ipcRenderer.invoke('personalProfile:save', data)
+  },
+  advisorSource: {
+    getByAdvisor: (advisorId: string) => ipcRenderer.invoke('advisorSource:getByAdvisor', advisorId),
+    addUrl: (advisorId: string, url: string) => ipcRenderer.invoke('advisorSource:addUrl', advisorId, url),
+    delete: (id: string) => ipcRenderer.invoke('advisorSource:delete', id)
+  },
+  advisorInsight: {
+    generate: (advisorId: string) => ipcRenderer.invoke('advisorInsight:generate', advisorId)
+  },
+  emailDraft: {
+    generate: (data: { advisorId: string; sourceEmail: string }) => ipcRenderer.invoke('emailDraft:generate', data),
+    getByAdvisor: (advisorId: string) => ipcRenderer.invoke('emailDraft:getByAdvisor', advisorId),
+    markSent: (id: string) => ipcRenderer.invoke('emailDraft:markSent', id)
   },
   backup: {
     exportAll: () => ipcRenderer.invoke('backup:exportAll'),

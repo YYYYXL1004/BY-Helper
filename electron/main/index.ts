@@ -9,9 +9,20 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, type OpenDialogOptions } from 'electron'
 import { join, dirname } from 'path'
 import { existsSync, copyFileSync, mkdirSync, writeFileSync } from 'fs'
+import { createHash, createCipheriv, createDecipheriv, randomBytes } from 'crypto'
 import log from 'electron-log'
 import { spawn } from 'child_process'
 import { initUpdater, autoUpdater } from './updater'
+import {
+  buildAdvisorInsightMessages,
+  buildChatCompletionsEndpoint,
+  buildEmailDraftMessages,
+  detectSourceType,
+  extractJsonObjectFromAiText,
+  extractReadableTextFromHtml,
+  truncateForPrompt,
+  type AdvisorSourcePromptData
+} from '../../src/lib/aiOutreach'
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -115,7 +126,7 @@ function backupUserDatabase(userDbPath: string, reason: string): void {
 
 async function ensureColumn(
   client: any,
-  tableName: 'Institution' | 'Advisor',
+  tableName: 'Institution' | 'Advisor' | 'AiConfig',
   columnName: string,
   columnDefinition: string,
   beforeAlter?: () => void
@@ -160,6 +171,100 @@ function contactRecordTableSql(): string {
   `
 }
 
+function aiConfigTableSql(): string {
+  return `
+    CREATE TABLE IF NOT EXISTS "AiConfig" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'default',
+      "baseUrl" TEXT NOT NULL,
+      "model" TEXT NOT NULL,
+      "apiKeyCiphertext" TEXT,
+      "apiKeyPreview" TEXT,
+      "systemPrompt" TEXT,
+      "temperature" REAL NOT NULL DEFAULT 0.4,
+      "maxTokens" INTEGER NOT NULL DEFAULT 2000,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `
+}
+
+function personalProfileTableSql(): string {
+  return `
+    CREATE TABLE IF NOT EXISTS "PersonalProfile" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'default',
+      "name" TEXT,
+      "university" TEXT,
+      "major" TEXT,
+      "gpa" TEXT,
+      "rank" TEXT,
+      "researchInterest" TEXT,
+      "projects" TEXT,
+      "achievements" TEXT,
+      "skills" TEXT,
+      "contact" TEXT,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `
+}
+
+function advisorSourceTableSql(): string {
+  return `
+    CREATE TABLE IF NOT EXISTS "AdvisorSource" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "advisorId" TEXT NOT NULL,
+      "url" TEXT NOT NULL,
+      "sourceType" TEXT NOT NULL,
+      "title" TEXT,
+      "contentText" TEXT NOT NULL,
+      "status" TEXT NOT NULL DEFAULT 'READY',
+      "error" TEXT,
+      "fetchedAt" DATETIME,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "AdvisorSource_advisorId_fkey" FOREIGN KEY ("advisorId") REFERENCES "Advisor" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    )
+  `
+}
+
+function advisorInsightTableSql(): string {
+  return `
+    CREATE TABLE IF NOT EXISTS "AdvisorInsight" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "advisorId" TEXT NOT NULL,
+      "researchSummary" TEXT NOT NULL,
+      "recentKeywords" TEXT NOT NULL,
+      "representativeWorks" TEXT NOT NULL,
+      "fitAngles" TEXT NOT NULL,
+      "emailHooks" TEXT NOT NULL,
+      "cautions" TEXT NOT NULL,
+      "rawJson" TEXT NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "AdvisorInsight_advisorId_fkey" FOREIGN KEY ("advisorId") REFERENCES "Advisor" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    )
+  `
+}
+
+function emailDraftTableSql(): string {
+  return `
+    CREATE TABLE IF NOT EXISTS "EmailDraft" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "advisorId" TEXT NOT NULL,
+      "templateId" TEXT,
+      "subject" TEXT NOT NULL,
+      "content" TEXT NOT NULL,
+      "rationale" TEXT,
+      "checklist" TEXT,
+      "status" TEXT NOT NULL DEFAULT 'DRAFT',
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "EmailDraft_advisorId_fkey" FOREIGN KEY ("advisorId") REFERENCES "Advisor" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "EmailDraft_templateId_fkey" FOREIGN KEY ("templateId") REFERENCES "EmailTemplate" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    )
+  `
+}
+
 async function ensureCurrentSchema(dbPath: string, shouldBackup: boolean): Promise<void> {
   let tmpPrisma: any = null
   try {
@@ -178,13 +283,27 @@ async function ensureCurrentSchema(dbPath: string, shouldBackup: boolean): Promi
     const statusChanged = await ensureColumn(tmpPrisma, 'Institution', 'applicationStatus', 'TEXT NOT NULL DEFAULT "WATCHING"', backupOnce)
     const advisorChanged = await ensureColumn(tmpPrisma, 'Advisor', 'sortOrder', 'INTEGER NOT NULL DEFAULT 0', backupOnce)
     const contactRecordChanged = await ensureTable(tmpPrisma, 'ContactRecord', contactRecordTableSql(), backupOnce)
+    const aiConfigChanged = await ensureTable(tmpPrisma, 'AiConfig', aiConfigTableSql(), backupOnce)
+    const personalProfileChanged = await ensureTable(tmpPrisma, 'PersonalProfile', personalProfileTableSql(), backupOnce)
+    const advisorSourceChanged = await ensureTable(tmpPrisma, 'AdvisorSource', advisorSourceTableSql(), backupOnce)
+    const advisorInsightChanged = await ensureTable(tmpPrisma, 'AdvisorInsight', advisorInsightTableSql(), backupOnce)
+    const emailDraftChanged = await ensureTable(tmpPrisma, 'EmailDraft', emailDraftTableSql(), backupOnce)
+    const aiConfigPromptChanged = await ensureColumn(tmpPrisma, 'AiConfig' as any, 'systemPrompt', 'TEXT', backupOnce)
 
-    if (institutionChanged || statusChanged || advisorChanged || contactRecordChanged) {
+    await tmpPrisma.$executeRawUnsafe('CREATE UNIQUE INDEX IF NOT EXISTS "AdvisorInsight_advisorId_key" ON "AdvisorInsight"("advisorId")')
+
+    if (institutionChanged || statusChanged || advisorChanged || contactRecordChanged || aiConfigChanged || aiConfigPromptChanged || personalProfileChanged || advisorSourceChanged || advisorInsightChanged || emailDraftChanged) {
       log.info('[Schema] Applied current schema migration', {
         institutionSortOrder: institutionChanged,
         applicationStatus: statusChanged,
         advisorSortOrder: advisorChanged,
-        contactRecord: contactRecordChanged
+        contactRecord: contactRecordChanged,
+        aiConfig: aiConfigChanged,
+        aiConfigPrompt: aiConfigPromptChanged,
+        personalProfile: personalProfileChanged,
+        advisorSource: advisorSourceChanged,
+        advisorInsight: advisorInsightChanged,
+        emailDraft: emailDraftChanged
       })
     }
   } finally {
@@ -353,6 +472,12 @@ async function createDatabaseSchema(dbPath: string): Promise<void> {
           CONSTRAINT "EmailVariable_templateId_fkey" FOREIGN KEY ("templateId") REFERENCES "EmailTemplate" ("id") ON DELETE CASCADE ON UPDATE CASCADE
         )
       `)
+      await tmpPrisma.$executeRawUnsafe(aiConfigTableSql())
+      await tmpPrisma.$executeRawUnsafe(personalProfileTableSql())
+      await tmpPrisma.$executeRawUnsafe(advisorSourceTableSql())
+      await tmpPrisma.$executeRawUnsafe(advisorInsightTableSql())
+      await tmpPrisma.$executeRawUnsafe(emailDraftTableSql())
+      await tmpPrisma.$executeRawUnsafe('CREATE UNIQUE INDEX IF NOT EXISTS "AdvisorInsight_advisorId_key" ON "AdvisorInsight"("advisorId")')
       await tmpPrisma.$executeRawUnsafe('COMMIT')
       log.info('[Prod] Created fresh database schema at:', dbPath)
     } catch (err) {
@@ -525,6 +650,193 @@ function parseDateRequired(value: unknown, fieldName: string): Date {
   return parsed
 }
 
+interface AiRuntimeConfig {
+  baseUrl: string
+  model: string
+  apiKey: string
+  systemPrompt: string | null
+  temperature: number
+  maxTokens: number
+}
+
+interface SourceFetchResult {
+  url: string
+  sourceType: string
+  title: string | null
+  contentText: string
+  status: 'READY' | 'ERROR'
+  error: string | null
+}
+
+function makeUuid(): string {
+  return randomBytes(16).toString('hex').replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5')
+}
+
+function getEncryptionKey(): Buffer {
+  return createHash('sha256').update(`${app.getPath('userData')}::pg-tracker-ai-key`).digest()
+}
+
+function encryptSecret(value: string): string {
+  const iv = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', getEncryptionKey(), iv)
+  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()])
+  return `${iv.toString('base64')}:${cipher.getAuthTag().toString('base64')}:${encrypted.toString('base64')}`
+}
+
+function decryptSecret(value: string | null | undefined): string {
+  if (!value) return ''
+  const [ivText, tagText, encryptedText] = value.split(':')
+  if (!ivText || !tagText || !encryptedText) return ''
+  const decipher = createDecipheriv('aes-256-gcm', getEncryptionKey(), Buffer.from(ivText, 'base64'))
+  decipher.setAuthTag(Buffer.from(tagText, 'base64'))
+  return Buffer.concat([
+    decipher.update(Buffer.from(encryptedText, 'base64')),
+    decipher.final()
+  ]).toString('utf8')
+}
+
+function maskApiKey(apiKey: string): string {
+  const trimmed = apiKey.trim()
+  if (trimmed.length <= 8) return '********'
+  return `${trimmed.slice(0, 4)}...${trimmed.slice(-4)}`
+}
+
+function validateHttpUrl(value: string): string {
+  const url = new URL(value)
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('Only http/https URLs are supported')
+  return url.toString()
+}
+
+function extractHtmlTitle(html: string): string | null {
+  const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
+  if (!match) return null
+  return extractReadableTextFromHtml(match[1]).slice(0, 200) || null
+}
+
+async function fetchAdvisorSource(urlInput: string): Promise<SourceFetchResult> {
+  const url = validateHttpUrl(urlInput.trim())
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 20000)
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'user-agent': 'PG-Tracker/2.4.1 AI Outreach Assistant',
+        accept: 'text/html,application/xhtml+xml,application/pdf,text/plain;q=0.9,*/*;q=0.8'
+      }
+    })
+    const contentType = response.headers.get('content-type') || ''
+    const sourceType = detectSourceType(url, contentType)
+    if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`)
+
+    if (sourceType === 'PDF') {
+      return {
+        url,
+        sourceType,
+        title: url.split('/').pop() || 'PDF',
+        contentText: 'PDF text extraction is not built into this MVP. Use an arXiv abstract page URL or paste abstract text into a regular web page source.',
+        status: 'READY',
+        error: null
+      }
+    }
+
+    const raw = await response.text()
+    const contentText = contentType.toLowerCase().includes('html')
+      ? extractReadableTextFromHtml(raw)
+      : raw.replace(/\r/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+    return {
+      url,
+      sourceType,
+      title: contentType.toLowerCase().includes('html') ? extractHtmlTitle(raw) : null,
+      contentText: truncateForPrompt(contentText, 50000),
+      status: 'READY',
+      error: null
+    }
+  } catch (error: unknown) {
+    return {
+      url,
+      sourceType: 'WEB',
+      title: null,
+      contentText: '',
+      status: 'ERROR',
+      error: getErrorMessage(error)
+    }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function getAiRuntimeConfig(client: any): Promise<AiRuntimeConfig> {
+  const config = await client.aiConfig.findUnique({ where: { id: 'default' } })
+  if (!config) throw new Error('请先在设置页配置 AI Base URL、API Key 和模型名')
+  const apiKey = decryptSecret(config.apiKeyCiphertext)
+  if (!apiKey) throw new Error('请先在设置页填写 AI API Key')
+  return {
+    baseUrl: config.baseUrl,
+    model: config.model,
+    apiKey,
+    systemPrompt: config.systemPrompt || null,
+    temperature: config.temperature ?? 0.4,
+    maxTokens: config.maxTokens ?? 2000
+  }
+}
+
+async function callOpenAiCompatible(config: AiRuntimeConfig, messages: Array<{ role: string; content: string }>): Promise<string> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 60000)
+  try {
+    const response = await fetch(buildChatCompletionsEndpoint(config.baseUrl), {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${config.apiKey}`
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages,
+        temperature: config.temperature,
+        max_tokens: config.maxTokens
+      })
+    })
+    const text = await response.text()
+    if (!response.ok) throw new Error(`AI API ${response.status}: ${text.slice(0, 500)}`)
+    const payload = JSON.parse(text)
+    const content = payload?.choices?.[0]?.message?.content
+    if (typeof content !== 'string' || !content.trim()) throw new Error('AI API returned empty content')
+    return content
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function normalizeStringList(value: unknown): string {
+  if (Array.isArray(value)) return value.map((item) => String(item)).filter(Boolean).join('\n')
+  if (value === null || value === undefined) return ''
+  return String(value)
+}
+
+function normalizeInsightPayload(payload: any): JsonRecord {
+  return {
+    researchSummary: normalizeStringList(payload?.researchSummary),
+    recentKeywords: normalizeStringList(payload?.recentKeywords),
+    representativeWorks: normalizeStringList(payload?.representativeWorks),
+    fitAngles: normalizeStringList(payload?.fitAngles),
+    emailHooks: normalizeStringList(payload?.emailHooks),
+    cautions: normalizeStringList(payload?.cautions),
+    rawJson: JSON.stringify(payload, null, 2)
+  }
+}
+
+function normalizeDraftPayload(payload: any): JsonRecord {
+  return {
+    subject: normalizeStringList(payload?.subject) || '套磁邮件',
+    content: normalizeStringList(payload?.content),
+    rationale: normalizeStringList(payload?.rationale),
+    checklist: normalizeStringList(payload?.checklist)
+  }
+}
+
 function buildInstitutionUpdateData(data: unknown): JsonRecord {
   const input = toRecord(data, 'institution update data')
   const updateData: JsonRecord = {}
@@ -547,14 +859,21 @@ function buildInstitutionUpdateData(data: unknown): JsonRecord {
 function buildInstitutionInclude(): JsonRecord {
   return {
     advisors: {
-      include: {
-        assets: true,
-        interviews: true,
-        contactRecords: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }
-      },
+      include: buildAdvisorInclude(),
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }]
     },
     tasks: true
+  }
+}
+
+function buildAdvisorInclude(): JsonRecord {
+  return {
+    assets: true,
+    interviews: true,
+    contactRecords: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] },
+    sources: { orderBy: [{ createdAt: 'desc' }] },
+    insight: true,
+    emailDrafts: { orderBy: [{ createdAt: 'desc' }] }
   }
 }
 
@@ -772,11 +1091,7 @@ ipcMain.handle('advisor:getByInstitution', async (_, institutionId: string) => {
     const client = await getPrisma()
     return await client.advisor.findMany({
       where: { institutionId },
-      include: {
-        assets: true,
-        interviews: true,
-        contactRecords: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }
-      },
+      include: buildAdvisorInclude(),
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }]
     })
   } catch (error) {
@@ -803,11 +1118,7 @@ ipcMain.handle('advisor:create', async (_, data: any) => {
         notes: data.notes,
         sortOrder
       },
-      include: {
-        assets: true,
-        interviews: true,
-        contactRecords: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }
-      }
+      include: buildAdvisorInclude()
     })
   } catch (error) {
     log.error('Error creating advisor:', error)
@@ -822,21 +1133,13 @@ ipcMain.handle('advisor:update', async (_, id: string, data: any) => {
     if (Object.keys(updateData).length === 0) {
       return await client.advisor.findUnique({
         where: { id },
-        include: {
-          assets: true,
-          interviews: true,
-          contactRecords: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }
-        }
+        include: buildAdvisorInclude()
       })
     }
     return await client.advisor.update({
       where: { id },
       data: updateData,
-      include: {
-        assets: true,
-        interviews: true,
-        contactRecords: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }
-      }
+      include: buildAdvisorInclude()
     })
   } catch (error) {
     log.error('Error updating advisor:', error)
@@ -1258,9 +1561,334 @@ ipcMain.handle('emailVariable:delete', async (_, id: string) => {
   }
 })
 
+// ============== AI Outreach Assistant ==============
+
+ipcMain.handle('aiConfig:get', async () => {
+  try {
+    const client = await getPrisma()
+    const config = await client.aiConfig.findUnique({ where: { id: 'default' } })
+    if (!config) return { success: true, data: null }
+    return {
+      success: true,
+      data: {
+        id: config.id,
+        baseUrl: config.baseUrl,
+        model: config.model,
+        apiKeyPreview: config.apiKeyPreview,
+        systemPrompt: config.systemPrompt,
+        temperature: config.temperature,
+        maxTokens: config.maxTokens,
+        createdAt: config.createdAt,
+        updatedAt: config.updatedAt
+      }
+    }
+  } catch (error: unknown) {
+    log.error('Error fetching AI config:', error)
+    return { success: false, error: getErrorMessage(error) }
+  }
+})
+
+ipcMain.handle('aiConfig:save', async (_, data: any) => {
+  try {
+    const client = await getPrisma()
+    const input = toRecord(data, 'AI config')
+    const baseUrl = String(input.baseUrl || '').trim()
+    const model = String(input.model || '').trim()
+    const apiKey = String(input.apiKey || '').trim()
+    const systemPrompt = input.systemPrompt ? String(input.systemPrompt) : null
+    if (!baseUrl) throw new Error('Base URL 不能为空')
+    if (!model) throw new Error('模型名不能为空')
+
+    const existing = await client.aiConfig.findUnique({ where: { id: 'default' } })
+    const encrypted = apiKey ? encryptSecret(apiKey) : existing?.apiKeyCiphertext
+    const apiKeyPreview = apiKey ? maskApiKey(apiKey) : existing?.apiKeyPreview
+    const config = await client.aiConfig.upsert({
+      where: { id: 'default' },
+      create: {
+        id: 'default',
+        baseUrl,
+        model,
+        apiKeyCiphertext: encrypted || null,
+        apiKeyPreview: apiKeyPreview || null,
+        systemPrompt,
+        temperature: Number(input.temperature ?? 0.4),
+        maxTokens: Number(input.maxTokens ?? 2000)
+      },
+      update: {
+        baseUrl,
+        model,
+        apiKeyCiphertext: encrypted || null,
+        apiKeyPreview: apiKeyPreview || null,
+        systemPrompt,
+        temperature: Number(input.temperature ?? 0.4),
+        maxTokens: Number(input.maxTokens ?? 2000)
+      }
+    })
+    return {
+      success: true,
+      data: {
+        id: config.id,
+        baseUrl: config.baseUrl,
+        model: config.model,
+        apiKeyPreview: config.apiKeyPreview,
+        systemPrompt: config.systemPrompt,
+        temperature: config.temperature,
+        maxTokens: config.maxTokens
+      }
+    }
+  } catch (error: unknown) {
+    log.error('Error saving AI config:', error)
+    return { success: false, error: getErrorMessage(error) }
+  }
+})
+
+ipcMain.handle('aiConfig:test', async () => {
+  try {
+    const client = await getPrisma()
+    const config = await getAiRuntimeConfig(client)
+    const content = await callOpenAiCompatible(config, [
+      { role: 'system', content: 'You are a connectivity test endpoint. Return JSON only.' },
+      { role: 'user', content: '{"ping":"pong"}' }
+    ])
+    return { success: true, data: { content: content.slice(0, 300) } }
+  } catch (error: unknown) {
+    log.error('Error testing AI config:', error)
+    return { success: false, error: getErrorMessage(error) }
+  }
+})
+
+ipcMain.handle('personalProfile:get', async () => {
+  try {
+    const client = await getPrisma()
+    const profile = await client.personalProfile.findUnique({ where: { id: 'default' } })
+    return { success: true, data: profile }
+  } catch (error: unknown) {
+    log.error('Error fetching personal profile:', error)
+    return { success: false, error: getErrorMessage(error) }
+  }
+})
+
+ipcMain.handle('personalProfile:save', async (_, data: any) => {
+  try {
+    const client = await getPrisma()
+    const input = toRecord(data, 'personal profile')
+    const fields = {
+      name: input.name ? String(input.name) : null,
+      university: input.university ? String(input.university) : null,
+      major: input.major ? String(input.major) : null,
+      gpa: input.gpa ? String(input.gpa) : null,
+      rank: input.rank ? String(input.rank) : null,
+      researchInterest: input.researchInterest ? String(input.researchInterest) : null,
+      projects: input.projects ? String(input.projects) : null,
+      achievements: input.achievements ? String(input.achievements) : null,
+      skills: input.skills ? String(input.skills) : null,
+      contact: input.contact ? String(input.contact) : null
+    }
+    const profile = await client.personalProfile.upsert({
+      where: { id: 'default' },
+      create: { id: 'default', ...fields },
+      update: fields
+    })
+    return { success: true, data: profile }
+  } catch (error: unknown) {
+    log.error('Error saving personal profile:', error)
+    return { success: false, error: getErrorMessage(error) }
+  }
+})
+
+ipcMain.handle('advisorSource:getByAdvisor', async (_, advisorId: string) => {
+  try {
+    const client = await getPrisma()
+    const sources = await client.advisorSource.findMany({
+      where: { advisorId },
+      orderBy: [{ createdAt: 'desc' }]
+    })
+    return { success: true, data: sources }
+  } catch (error: unknown) {
+    log.error('Error fetching advisor sources:', error)
+    return { success: false, error: getErrorMessage(error) }
+  }
+})
+
+ipcMain.handle('advisorSource:addUrl', async (_, advisorId: string, url: string) => {
+  try {
+    const client = await getPrisma()
+    const fetched = await fetchAdvisorSource(url)
+    const source = await client.advisorSource.create({
+      data: {
+        id: makeUuid(),
+        advisorId,
+        url: fetched.url,
+        sourceType: fetched.sourceType,
+        title: fetched.title,
+        contentText: fetched.contentText,
+        status: fetched.status,
+        error: fetched.error,
+        fetchedAt: new Date()
+      }
+    })
+    return { success: fetched.status === 'READY', data: source, error: fetched.error || undefined }
+  } catch (error: unknown) {
+    log.error('Error adding advisor source:', error)
+    return { success: false, error: getErrorMessage(error) }
+  }
+})
+
+ipcMain.handle('advisorSource:delete', async (_, id: string) => {
+  try {
+    const client = await getPrisma()
+    await client.advisorSource.delete({ where: { id } })
+    return { success: true }
+  } catch (error: unknown) {
+    log.error('Error deleting advisor source:', error)
+    return { success: false, error: getErrorMessage(error) }
+  }
+})
+
+ipcMain.handle('advisorInsight:generate', async (_, advisorId: string) => {
+  try {
+    const client = await getPrisma()
+    const advisor = await client.advisor.findUnique({
+      where: { id: advisorId },
+      include: { institution: true, sources: { where: { status: 'READY' }, orderBy: [{ createdAt: 'desc' }] } }
+    })
+    if (!advisor) throw new Error('导师不存在')
+    if (!advisor.sources || advisor.sources.length === 0) throw new Error('请先为导师添加至少一个可读取的 URL')
+
+    const config = await getAiRuntimeConfig(client)
+    const sources: AdvisorSourcePromptData[] = advisor.sources.map((source: any) => ({
+      url: source.url,
+      sourceType: source.sourceType,
+      title: source.title,
+      text: source.contentText
+    }))
+    const messages = buildAdvisorInsightMessages({
+      advisor: {
+        name: advisor.name,
+        title: advisor.title,
+        researchArea: advisor.researchArea,
+        notes: advisor.notes
+      },
+      institution: {
+        name: advisor.institution.name,
+        department: advisor.institution.department
+      },
+      systemPrompt: config.systemPrompt,
+      sources
+    })
+    const aiText = await callOpenAiCompatible(config, messages)
+    const payload = extractJsonObjectFromAiText(aiText)
+    const normalized = normalizeInsightPayload(payload)
+    const insight = await client.advisorInsight.upsert({
+      where: { advisorId },
+      create: { id: makeUuid(), advisorId, ...normalized },
+      update: normalized
+    })
+    return { success: true, data: insight }
+  } catch (error: unknown) {
+    log.error('Error generating advisor insight:', error)
+    return { success: false, error: getErrorMessage(error) }
+  }
+})
+
+ipcMain.handle('emailDraft:generate', async (_, data: any) => {
+  try {
+    const client = await getPrisma()
+    const input = toRecord(data, 'email draft request')
+    const advisorId = String(input.advisorId || '')
+    const sourceEmail = String(input.sourceEmail || '').trim()
+    if (!sourceEmail) throw new Error('请先粘贴一封已有套磁信')
+    const advisor = await client.advisor.findUnique({
+      where: { id: advisorId },
+      include: { institution: true, insight: true }
+    })
+    if (!advisor) throw new Error('导师不存在')
+    const config = await getAiRuntimeConfig(client)
+    const messages = buildEmailDraftMessages({
+      advisor: {
+        name: advisor.name,
+        title: advisor.title,
+        researchArea: advisor.researchArea,
+        email: advisor.email
+      },
+      institution: {
+        name: advisor.institution.name,
+        department: advisor.institution.department
+      },
+      sourceEmail,
+      systemPrompt: config.systemPrompt,
+      insight: advisor.insight || {}
+    })
+    const aiText = await callOpenAiCompatible(config, messages)
+    const payload = extractJsonObjectFromAiText(aiText)
+    const normalized = normalizeDraftPayload(payload)
+    const draft = await client.emailDraft.create({
+      data: {
+        id: makeUuid(),
+        advisorId,
+        templateId: null,
+        subject: String(normalized.subject),
+        content: String(normalized.content),
+        rationale: String(normalized.rationale || ''),
+        checklist: String(normalized.checklist || '')
+      }
+    })
+    return { success: true, data: draft }
+  } catch (error: unknown) {
+    log.error('Error generating email draft:', error)
+    return { success: false, error: getErrorMessage(error) }
+  }
+})
+
+ipcMain.handle('emailDraft:getByAdvisor', async (_, advisorId: string) => {
+  try {
+    const client = await getPrisma()
+    const drafts = await client.emailDraft.findMany({
+      where: { advisorId },
+      orderBy: [{ createdAt: 'desc' }]
+    })
+    return { success: true, data: drafts }
+  } catch (error: unknown) {
+    log.error('Error fetching email drafts:', error)
+    return { success: false, error: getErrorMessage(error) }
+  }
+})
+
+ipcMain.handle('emailDraft:markSent', async (_, id: string) => {
+  try {
+    const client = await getPrisma()
+    const draft = await client.emailDraft.update({
+      where: { id },
+      data: { status: 'SENT' },
+      include: { advisor: true }
+    })
+    await client.contactRecord.create({
+      data: {
+        advisorId: draft.advisorId,
+        date: new Date(),
+        type: 'EMAIL_SENT',
+        content: `已发送 AI 套磁草稿：${draft.subject}`
+      }
+    })
+    await client.advisor.update({
+      where: { id: draft.advisorId },
+      data: { contactStatus: 'SENT', lastContactDate: new Date() }
+    })
+    return { success: true, data: draft }
+  } catch (error: unknown) {
+    log.error('Error marking email draft as sent:', error)
+    return { success: false, error: getErrorMessage(error) }
+  }
+})
+
 // ============== Full Backup Export / Import ==============
 
 async function clearApplicationData(tx: any): Promise<void> {
+  await tx.emailDraft.deleteMany()
+  await tx.advisorInsight.deleteMany()
+  await tx.advisorSource.deleteMany()
+  await tx.personalProfile.deleteMany()
+  await tx.aiConfig.deleteMany()
   await tx.emailVariable.deleteMany()
   await tx.emailTemplate.deleteMany()
   await tx.asset.deleteMany()
@@ -1277,7 +1905,7 @@ ipcMain.handle('backup:exportAll', async () => {
     const [institutions, orphanTasks, emailTemplates] = await Promise.all([
       client.institution.findMany({
         include: {
-          advisors: { include: { assets: true, interviews: true, contactRecords: true } },
+          advisors: { include: { assets: true, interviews: true, contactRecords: true, sources: true, insight: true, emailDrafts: true } },
           tasks: true
         }
       }),
@@ -1351,7 +1979,7 @@ ipcMain.handle('backup:importAll', async (_, data: any, options?: { mode?: 'repl
           await tx.institution.create({ data: instRest })
           if (Array.isArray(advisors)) {
             for (const advisor of advisors) {
-              const { assets, interviews, contactRecords, ...advisorRest } = advisor
+              const { assets, interviews, contactRecords, sources, insight, emailDrafts, ...advisorRest } = advisor
               const created = await tx.advisor.create({ data: advisorRest })
               if (Array.isArray(assets)) {
                 for (const asset of assets) {
@@ -1366,6 +1994,21 @@ ipcMain.handle('backup:importAll', async (_, data: any, options?: { mode?: 'repl
               if (Array.isArray(contactRecords)) {
                 for (const record of contactRecords) {
                   await tx.contactRecord.create({ data: { ...record, advisorId: created.id } })
+                }
+              }
+              if (Array.isArray(sources)) {
+                for (const source of sources) {
+                  await tx.advisorSource.create({ data: { ...source, advisorId: created.id } })
+                }
+              }
+              if (insight) {
+                const insightRest = { ...insight }
+                delete insightRest.advisorId
+                await tx.advisorInsight.create({ data: { ...insightRest, advisorId: created.id } })
+              }
+              if (Array.isArray(emailDrafts)) {
+                for (const draft of emailDrafts) {
+                  await tx.emailDraft.create({ data: { ...draft, advisorId: created.id } })
                 }
               }
             }

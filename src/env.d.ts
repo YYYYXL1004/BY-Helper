@@ -10,15 +10,22 @@ import { ElectronAPI } from '@electron-toolkit/preload'
 import type {
   Advisor,
   AdvisorInput,
+  AdvisorInsight,
+  AdvisorSource,
   Asset,
   ContactRecord,
   ContactRecordInput,
+  AiConfig,
+  AiConfigInput,
+  EmailDraft,
+  EmailDraftInput,
   EmailTemplate,
   EmailVariable,
   Institution,
   InstitutionInput,
   Interview,
   InterviewInput,
+  PersonalProfile,
   Task,
   TaskInput,
   TaskUpdate
@@ -100,6 +107,28 @@ interface CustomAPI {
     getByTemplate: (templateId: string) => Promise<ApiResponse<EmailVariable[]>>
     create: (data: { name: string; templateId: string }) => Promise<ApiResponse<EmailVariable>>
     delete: (id: string) => Promise<ApiResponse>
+  }
+  aiConfig: {
+    get: () => Promise<ApiResponse<AiConfig | null>>
+    save: (data: AiConfigInput) => Promise<ApiResponse<AiConfig>>
+    test: () => Promise<ApiResponse<{ content: string }>>
+  }
+  personalProfile: {
+    get: () => Promise<ApiResponse<PersonalProfile | null>>
+    save: (data: PersonalProfile) => Promise<ApiResponse<PersonalProfile>>
+  }
+  advisorSource: {
+    getByAdvisor: (advisorId: string) => Promise<ApiResponse<AdvisorSource[]>>
+    addUrl: (advisorId: string, url: string) => Promise<ApiResponse<AdvisorSource>>
+    delete: (id: string) => Promise<ApiResponse>
+  }
+  advisorInsight: {
+    generate: (advisorId: string) => Promise<ApiResponse<AdvisorInsight>>
+  }
+  emailDraft: {
+    generate: (data: EmailDraftInput) => Promise<ApiResponse<EmailDraft>>
+    getByAdvisor: (advisorId: string) => Promise<ApiResponse<EmailDraft[]>>
+    markSent: (id: string) => Promise<ApiResponse<EmailDraft>>
   }
   backup: {
     exportAll: () => Promise<ApiResponse<{ version: string; exportedAt: string; institutions: Institution[]; orphanTasks: Task[]; emailTemplates: EmailTemplate[] }>>

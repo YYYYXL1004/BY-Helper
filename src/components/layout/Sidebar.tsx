@@ -1,15 +1,15 @@
 /**
  * @Project: PG-Tracker
  * @File: Sidebar.tsx
- * @Description: 左侧导航栏组件，提供总览、院校看板、日程、邮件模板、设置五个一级导航入口
+ * @Description: 左侧导航栏组件，提供总览、院校看板、导师总览、AI 套磁、日程、设置入口
  * @Author: 杨敬诚
  * @Date: 2026-04-08
  * Copyright (c) 2026. All rights reserved.
  */
-import { LayoutDashboard, Kanban, Calendar, Mail, Settings, GraduationCap } from 'lucide-react'
+import { LayoutDashboard, Kanban, Calendar, Settings, GraduationCap, Users, Bot } from 'lucide-react'
 import { useAppVersion } from '../../lib/useAppVersion'
 
-type View = 'dashboard' | 'kanban' | 'timeline' | 'templates' | 'settings'
+type View = 'dashboard' | 'kanban' | 'advisors' | 'aiOutreach' | 'timeline' | 'settings'
 
 interface SidebarProps {
   currentView: View
@@ -20,8 +20,9 @@ interface SidebarProps {
 const navItems = [
   { id: 'dashboard' as View, label: '总览', icon: <LayoutDashboard className="w-5 h-5" /> },
   { id: 'kanban' as View, label: '院校看板', icon: <Kanban className="w-5 h-5" /> },
+  { id: 'advisors' as View, label: '导师总览', icon: <Users className="w-5 h-5" /> },
+  { id: 'aiOutreach' as View, label: 'AI 套磁助手', icon: <Bot className="w-5 h-5" /> },
   { id: 'timeline' as View, label: '日程', icon: <Calendar className="w-5 h-5" /> },
-  { id: 'templates' as View, label: '邮件模板', icon: <Mail className="w-5 h-5" /> },
   { id: 'settings' as View, label: '设置', icon: <Settings className="w-5 h-5" /> }
 ]
 

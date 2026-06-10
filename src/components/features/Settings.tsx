@@ -1,35 +1,61 @@
 /**
  * @Project: PG-Tracker
  * @File: Settings.tsx
- * @Description: 设置页面，提供主题切换、颜色主题选择、数据导入导出、数据清除及联系方式展示
+ * @Description: 设置页面，提供主题、颜色、数据管理、AI 配置、更新和关于信息
  * @Author: 杨敬诚
  * @Date: 2026-04-08
  * Copyright (c) 2026. All rights reserved.
  */
-import { Moon, Sun, Monitor, Database, Download, Upload, Trash2, Mail, Palette, RefreshCw } from 'lucide-react'
-import avatarUrl from '../../assets/avatar.jpg'
-import { useTheme } from 'next-themes'
-import { useColorTheme, colorThemes } from '../ColorThemeContext'
 import { useEffect, useState } from 'react'
+import { Bot, Check, Database, Download, Monitor, Moon, Palette, RefreshCw, Sun, Trash2, Upload } from 'lucide-react'
+import { useTheme } from 'next-themes'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
+import { Input } from '../ui/input'
 import { Label } from '../ui/label'
+import { Textarea } from '../ui/textarea'
 import { ConfirmDialog } from '../ui/confirm-dialog'
+import { colorThemes, useColorTheme } from '../ColorThemeContext'
+import { DEFAULT_AI_OUTREACH_SYSTEM_PROMPT } from '../../lib/aiOutreach'
+import { getErrorMessage } from '../../lib/utils'
 import { useAppVersion } from '../../lib/useAppVersion'
 import { useUpdater } from '../../lib/useUpdater'
-import { getErrorMessage } from '../../lib/utils'
+import { useStore } from '../../stores/appStore'
 
 export default function Settings(): JSX.Element | null {
   const { theme, setTheme } = useTheme()
   const { colorTheme, setColorTheme } = useColorTheme()
+  const { aiConfig, loadAiConfig, saveAiConfig, testAiConfig } = useStore()
   const [mounted, setMounted] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [showDoubleConfirm, setShowDoubleConfirm] = useState(false)
+  const [aiForm, setAiForm] = useState({
+    baseUrl: '',
+    model: '',
+    apiKey: '',
+    systemPrompt: DEFAULT_AI_OUTREACH_SYSTEM_PROMPT
+  })
+  const [aiSaving, setAiSaving] = useState(false)
+  const [aiTesting, setAiTesting] = useState(false)
   const appVersion = useAppVersion()
   const { status, checking, checkForUpdates, downloadUpdate, installUpdate } = useUpdater()
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
+
+  useEffect(() => {
+    void loadAiConfig()
+  }, [loadAiConfig])
+
+  useEffect(() => {
+    if (!aiConfig) return
+    setAiForm({
+      baseUrl: aiConfig.baseUrl || '',
+      model: aiConfig.model || '',
+      apiKey: '',
+      systemPrompt: aiConfig.systemPrompt || DEFAULT_AI_OUTREACH_SYSTEM_PROMPT
+    })
+  }, [aiConfig])
 
   if (!mounted) return null
 
@@ -59,21 +85,22 @@ export default function Settings(): JSX.Element | null {
       const input = document.createElement('input')
       input.type = 'file'
       input.accept = '.json'
-      input.onchange = async (e) => {
-        const file = (e.target as HTMLInputElement).files?.[0]
+      input.onchange = async (event) => {
+        const file = (event.target as HTMLInputElement).files?.[0]
         if (!file) return
+
         const readFile = (): Promise<string> => {
           return new Promise((resolve, reject) => {
             const reader = new FileReader()
-            reader.onload = (e) => resolve(e.target?.result as string)
+            reader.onload = (readerEvent) => resolve(readerEvent.target?.result as string)
             reader.onerror = reject
             reader.readAsText(file)
           })
         }
+
         try {
           const content = await readFile()
           const data = JSON.parse(content)
-          // 检测新旧格式：新格式包含 institutions + emailTemplates 字段，旧格式是纯数组
           const payload = data.institutions !== undefined || data.orphanTasks !== undefined || data.emailTemplates !== undefined
             ? data
             : Array.isArray(data)
@@ -84,6 +111,7 @@ export default function Settings(): JSX.Element | null {
             alert('导入失败：无效的数据格式')
             return
           }
+
           const shouldImport = window.confirm('导入会先清空当前数据，再恢复备份文件中的内容。建议确认已导出当前备份后再继续。是否继续？')
           if (!shouldImport) return
 
@@ -123,6 +151,38 @@ export default function Settings(): JSX.Element | null {
     }
   }
 
+  const handleSaveAiConfig = async (): Promise<void> => {
+    setAiSaving(true)
+    try {
+      await saveAiConfig({
+        baseUrl: aiForm.baseUrl,
+        model: aiForm.model,
+        apiKey: aiForm.apiKey || undefined,
+        systemPrompt: aiForm.systemPrompt
+      })
+      setAiForm((prev) => ({ ...prev, apiKey: '' }))
+      alert('AI 配置已保存')
+    } catch (error) {
+      alert('AI 配置保存失败：' + getErrorMessage(error))
+    } finally {
+      setAiSaving(false)
+    }
+  }
+
+  const handleTestAiConfig = async (): Promise<void> => {
+    setAiTesting(true)
+    try {
+      await testAiConfig()
+      alert('AI 连接测试成功')
+    } catch (error) {
+      alert('AI 连接测试失败：' + getErrorMessage(error))
+    } finally {
+      setAiTesting(false)
+    }
+  }
+
+  const selectedColorTheme = colorThemes.find((color) => color.id === colorTheme)
+
   return (
     <div className="h-full overflow-auto p-6">
       <ConfirmDialog
@@ -146,13 +206,13 @@ export default function Settings(): JSX.Element | null {
         variant="destructive"
         onConfirm={handleClearData}
       />
-      <div className="max-w-2xl mx-auto space-y-6">
+
+      <div className="mx-auto max-w-2xl space-y-6">
         <div>
           <h2 className="text-3xl font-bold">设置</h2>
-          <p className="text-muted-foreground">管理应用偏好和数据</p>
+          <p className="text-muted-foreground">管理应用偏好、数据和 AI 接口</p>
         </div>
 
-        {/* 主题模式选择 */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg font-semibold">外观模式</CardTitle>
@@ -170,7 +230,6 @@ export default function Settings(): JSX.Element | null {
           </CardContent>
         </Card>
 
-        {/* 颜色主题选择 */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg font-semibold flex items-center gap-2"><Palette className="h-5 w-5" />颜色主题</CardTitle>
@@ -178,36 +237,32 @@ export default function Settings(): JSX.Element | null {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-              {colorThemes.map((t) => (
+              {colorThemes.map((color) => (
                 <button
-                  key={t.id}
-                  onClick={() => setColorTheme(t.id)}
-                  className={`relative p-3 rounded-lg border-2 transition-all hover:scale-105 ${
-                    colorTheme === t.id
+                  key={color.id}
+                  type="button"
+                  onClick={() => setColorTheme(color.id)}
+                  className={`relative rounded-lg border-2 p-3 transition-all hover:scale-105 ${
+                    colorTheme === color.id
                       ? 'border-primary ring-2 ring-primary/20'
                       : 'border-border hover:border-primary/50'
                   }`}
                 >
                   <div className="flex flex-col items-center gap-2">
-                    <div
-                      className="w-8 h-8 rounded-full shadow-md"
-                      style={{ backgroundColor: t.color }}
-                    />
-                    <span className="text-xs font-medium">{t.name}</span>
+                    <div className="h-8 w-8 rounded-full shadow-md" style={{ backgroundColor: color.color }} />
+                    <span className="text-xs font-medium">{color.name}</span>
                   </div>
-                  {colorTheme === t.id && (
-                    <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary flex items-center justify-center">
-                      <svg className="w-2.5 h-2.5 text-primary-foreground" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
+                  {colorTheme === color.id && (
+                    <div className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary">
+                      <Check className="h-2.5 w-2.5 text-primary-foreground" />
                     </div>
                   )}
                 </button>
               ))}
             </div>
             <p className="text-xs text-muted-foreground">
-              当前选择：<span className="font-medium">{colorThemes.find(t => t.id === colorTheme)?.name}</span>
-              — {colorThemes.find(t => t.id === colorTheme)?.description}
+              当前选择：<span className="font-medium">{selectedColorTheme?.name}</span>
+              {selectedColorTheme ? ` - ${selectedColorTheme.description}` : ''}
             </p>
           </CardContent>
         </Card>
@@ -222,14 +277,66 @@ export default function Settings(): JSX.Element | null {
               <Button variant="outline" onClick={handleExportData} className="flex-1"><Download className="h-4 w-4 mr-2" />导出数据</Button>
               <Button variant="outline" onClick={handleImportData} className="flex-1"><Upload className="h-4 w-4 mr-2" />导入数据</Button>
             </div>
-            <div className="pt-4 border-t">
+            <div className="border-t pt-4">
               <Button variant="destructive" onClick={() => setShowClearConfirm(true)} className="w-full"><Trash2 className="h-4 w-4 mr-2" />清除所有数据</Button>
-              <p className="text-xs text-muted-foreground text-center mt-2">清除后数据将永久丢失，请先导出备份</p>
+              <p className="mt-2 text-center text-xs text-muted-foreground">清除后数据将永久丢失，请先导出备份</p>
             </div>
           </CardContent>
         </Card>
 
-        {/* 软件更新 */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold flex items-center gap-2"><Bot className="h-5 w-5" />AI 配置</CardTitle>
+            <CardDescription>配置 OpenAI-compatible 中转站、模型和套磁助手提示词</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid grid-cols-1 gap-3">
+              <div>
+                <Label>API Base URL</Label>
+                <Input
+                  value={aiForm.baseUrl}
+                  onChange={(event) => setAiForm((prev) => ({ ...prev, baseUrl: event.target.value }))}
+                  placeholder="https://your-relay.example.com/v1"
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <Label>模型名</Label>
+                  <Input
+                    value={aiForm.model}
+                    onChange={(event) => setAiForm((prev) => ({ ...prev, model: event.target.value }))}
+                    placeholder="gpt-5.5 / gpt-5.4-mini / ..."
+                  />
+                </div>
+                <div>
+                  <Label>API Key</Label>
+                  <Input
+                    type="password"
+                    value={aiForm.apiKey}
+                    onChange={(event) => setAiForm((prev) => ({ ...prev, apiKey: event.target.value }))}
+                    placeholder={aiConfig?.apiKeyPreview ? `已保存：${aiConfig.apiKeyPreview}` : '输入中转站 API Key'}
+                  />
+                </div>
+              </div>
+              <div>
+                <Label>任务初始提示词</Label>
+                <Textarea
+                  rows={8}
+                  value={aiForm.systemPrompt}
+                  onChange={(event) => setAiForm((prev) => ({ ...prev, systemPrompt: event.target.value }))}
+                  placeholder={DEFAULT_AI_OUTREACH_SYSTEM_PROMPT}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">用于约束导师画像和套磁草稿生成风格。建议保留事实可追溯、不编造、克制专业等要求。</p>
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={handleSaveAiConfig} disabled={aiSaving} className="flex-1">{aiSaving ? '保存中...' : '保存 AI 配置'}</Button>
+                <Button onClick={handleTestAiConfig} disabled={aiTesting || !aiConfig} variant="outline" className="flex-1">{aiTesting ? '测试中...' : '测试连接'}</Button>
+              </div>
+              <p className="text-xs text-muted-foreground">API Key 只保存在本机数据库中，并在主进程调用；不会暴露给前端页面。</p>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="text-lg font-semibold flex items-center gap-2"><RefreshCw className="h-5 w-5" />软件更新</CardTitle>
@@ -239,7 +346,7 @@ export default function Settings(): JSX.Element | null {
             <p className="text-sm text-muted-foreground">当前版本：{appVersion || '...'}</p>
 
             {status.phase === 'available' && (
-              <div className="p-3 rounded-lg border border-primary/30 bg-primary/5">
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
                 <p className="text-sm font-medium">发现新版本 v{status.version}</p>
               </div>
             )}
@@ -247,14 +354,14 @@ export default function Settings(): JSX.Element | null {
             {status.phase === 'downloading' && (
               <div className="space-y-2">
                 <p className="text-sm">正在下载... {status.percent}%</p>
-                <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                  <div className="h-full bg-primary transition-all rounded-full" style={{ width: `${status.percent || 0}%` }} />
+                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${status.percent || 0}%` }} />
                 </div>
               </div>
             )}
 
             {status.phase === 'downloaded' && (
-              <div className="p-3 rounded-lg border border-green-500/30 bg-green-500/5">
+              <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-3">
                 <p className="text-sm font-medium text-green-600 dark:text-green-400">下载完成，重启即可更新</p>
               </div>
             )}
@@ -264,7 +371,7 @@ export default function Settings(): JSX.Element | null {
             )}
 
             {status.phase === 'error' && (
-              <div className="p-3 rounded-lg border border-destructive/30 bg-destructive/5">
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
                 <p className="text-sm text-destructive">检查失败：{status.error}</p>
               </div>
             )}
@@ -290,20 +397,6 @@ export default function Settings(): JSX.Element | null {
             <p>版本：{appVersion || '...'}</p>
             <p>数据存储：本地 SQLite 数据库</p>
             <p className="pt-2">本应用完全离线运行，所有数据均存储在本地设备上，保护你的隐私。</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle className="text-lg font-semibold flex items-center gap-2"><Mail className="h-5 w-5" />联系我们</CardTitle></CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground mb-3">使用中遇到问题、有功能建议，或想交流保研经验，欢迎随时联系：</p>
-            <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/30">
-              <img src={avatarUrl} alt="客服头像" className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
-              <div>
-                <p className="text-xs text-muted-foreground">微信号</p>
-                <p className="text-sm font-medium text-foreground select-all">W17331702101</p>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </div>

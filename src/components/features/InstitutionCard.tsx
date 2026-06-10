@@ -16,11 +16,12 @@ import { parsePolicyTags, parseValidDate, formatDateSafe } from '../../lib/utils
 
 interface InstitutionCardProps {
   institution: Institution
+  dragHandle?: import('react').ReactNode
   onClick: () => void
   onEdit: () => void
 }
 
-export default function InstitutionCard({ institution, onClick, onEdit }: InstitutionCardProps): JSX.Element {
+export default function InstitutionCard({ institution, dragHandle, onClick, onEdit }: InstitutionCardProps): JSX.Element {
   const deadline = institution.campDeadline || institution.pushDeadline
   const deadlineDate = parseValidDate(deadline)
   const today = new Date()
@@ -53,6 +54,7 @@ export default function InstitutionCard({ institution, onClick, onEdit }: Instit
           <p className="text-xs text-muted-foreground truncate">{institution.department}</p>
         </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {dragHandle}
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); onEdit() }}>
             <Edit2 className="h-3.5 w-3.5" />
           </Button>
