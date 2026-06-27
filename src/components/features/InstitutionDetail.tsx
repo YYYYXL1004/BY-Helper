@@ -8,7 +8,7 @@
  */
 import React, { useState, useEffect } from 'react'
 import { ArrowLeft, Building2, Users, Edit2, Trash2, Plus, Mail, ExternalLink, FileText, CheckCircle2, Circle, AlertTriangle, ArrowRight, ChevronDown, Check, GripVertical, Bot } from 'lucide-react'
-import { useStore, Advisor, Asset, ContactRecord, ContactRecordInput, Task } from '../../stores/appStore'
+import { useStore, Advisor, Asset, ContactRecord, ContactRecordInput, Interview, Task } from '../../stores/appStore'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
 import { Input } from '../ui/input'
@@ -43,8 +43,12 @@ function renderStarRating(score: number | null | undefined): string | null {
   return `${'★'.repeat(normalized)}${'☆'.repeat(5 - normalized)}`
 }
 
+function getInterviewFormatLabel(format: Interview['format']): string {
+  return format === 'OFFLINE' ? '线下' : '线上'
+}
+
 export default function InstitutionDetail({ institutionId, onBack, targetAdvisorId, onTargetAdvisorHandled }: InstitutionDetailProps): JSX.Element {
-  const { institutions, isLoading, deleteInstitution, updateInstitution, updateTask, deleteTask, updateAdvisor, reorderAdvisors, addAsset, addContactRecord, deleteContactRecord, conflictWarnings, checkConflicts } = useStore()
+  const { institutions, isLoading, deleteInstitution, updateInstitution, updateTask, deleteTask, updateAdvisor, reorderAdvisors, addAsset, addContactRecord, deleteContactRecord, deleteInterview, conflictWarnings, checkConflicts } = useStore()
   const [showAdvisorForm, setShowAdvisorForm] = useState(false)
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [showInterviewForm, setShowInterviewForm] = useState(false)
@@ -459,6 +463,7 @@ export default function InstitutionDetail({ institutionId, onBack, targetAdvisor
                       addAsset={addAsset}
                       addContactRecord={addContactRecord}
                       deleteContactRecord={deleteContactRecord}
+                      deleteInterview={deleteInterview}
                     />
                   </div>
                 ))}
@@ -527,9 +532,10 @@ interface AdvisorCardProps {
   addAsset: (data: Omit<Asset, 'id'>) => Promise<Asset>
   addContactRecord: (data: ContactRecordInput) => Promise<ContactRecord>
   deleteContactRecord: (id: string) => Promise<void>
+  deleteInterview: (id: string) => Promise<void>
 }
 
-function AdvisorCard({ advisor, dragHandle, onEdit, onAddInterview, onOpenAiAssistant, updateAdvisor, addAsset, addContactRecord, deleteContactRecord }: AdvisorCardProps): JSX.Element {
+function AdvisorCard({ advisor, dragHandle, onEdit, onAddInterview, onOpenAiAssistant, updateAdvisor, addAsset, addContactRecord, deleteContactRecord, deleteInterview }: AdvisorCardProps): JSX.Element {
   const [showAssets, setShowAssets] = useState(false)
   const [showContactForm, setShowContactForm] = useState(false)
   const [contactForm, setContactForm] = useState({
@@ -570,6 +576,9 @@ function AdvisorCard({ advisor, dragHandle, onEdit, onAddInterview, onOpenAiAssi
 
   const currentStatus = advisorStatusConfig[advisor.contactStatus] ?? advisorStatusConfig.PENDING
   const contactRecords = advisor.contactRecords || []
+  const interviews = [...(advisor.interviews || [])].sort((a, b) => {
+    return new Date(b.date).getTime() - new Date(a.date).getTime()
+  })
 
   return (
     <div className="border rounded-lg p-4 bg-card">
@@ -700,6 +709,51 @@ function AdvisorCard({ advisor, dragHandle, onEdit, onAddInterview, onOpenAiAssi
           <p className="text-xs text-muted-foreground">暂无联系记录</p>
         )}
       </div>
+
+      {interviews.length > 0 && (
+        <div className="mb-3 rounded-lg border border-border bg-muted/20 p-3">
+          <div className="mb-2 flex items-center gap-2">
+            <FileText className="h-4 w-4 text-muted-foreground" />
+            <p className="text-sm font-medium">面经记录</p>
+            <span className="text-xs text-muted-foreground">({interviews.length})</span>
+          </div>
+          <div className="space-y-2">
+            {interviews.map((interview, index) => {
+              const interviewDate = formatDateSafe(interview.date, 'yyyy/MM/dd')
+              return (
+                <details key={interview.id} open={index === 0} className="rounded-md bg-background/70 p-2 text-sm">
+                  <summary className="cursor-pointer list-none">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">{interviewDate}</span>
+                        <Badge variant="secondary" className="text-xs">{getInterviewFormatLabel(interview.format)}</Badge>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`删除 ${interviewDate} 面经`}
+                        title="删除面经"
+                        className="h-7 w-7 flex-shrink-0 text-destructive hover:text-destructive"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          void deleteInterview(interview.id)
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </summary>
+                  <div className="mt-2 whitespace-pre-wrap break-words text-sm text-muted-foreground">
+                    {interview.markdownNotes || '暂无内容'}
+                  </div>
+                </details>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-2 pt-2 border-t">
         <Button size="sm" variant="outline" onClick={onEdit}><Edit2 className="h-4 w-4 mr-1" />编辑</Button>

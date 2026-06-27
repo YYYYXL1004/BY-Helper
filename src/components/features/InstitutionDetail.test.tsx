@@ -97,4 +97,71 @@ describe('InstitutionDetail advisor ordering mode', () => {
     expect(screen.getByRole('button', { name: '调整顺序' })).toBeInTheDocument()
     expect(screen.queryByLabelText('拖动排序')).not.toBeInTheDocument()
   })
+
+  it('shows saved interview records on advisor cards', async () => {
+    const institutionWithInterview: Institution = {
+      ...institutionFixture,
+      advisors: [
+        {
+          ...advisorBase,
+          id: 'advisor-1',
+          email: 'zhang@example.com',
+          name: '张教授',
+          interviews: [
+            {
+              id: 'interview-1',
+              advisorId: 'advisor-1',
+              date: '2026-06-01T00:00:00.000Z',
+              format: 'ONLINE',
+              markdownNotes: '问了项目动机\n以及论文细节'
+            }
+          ]
+        }
+      ]
+    }
+    useStore.setState({ institutions: [institutionWithInterview] })
+
+    render(<InstitutionDetail institutionId="inst-1" onBack={() => undefined} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /导师预览/i }))
+
+    expect(await screen.findByText('面经记录')).toBeInTheDocument()
+    expect(screen.getByText(/2026\/06\/01/)).toBeInTheDocument()
+    expect(screen.getByText(/线上/)).toBeInTheDocument()
+    expect(screen.getByText(/问了项目动机/)).toBeInTheDocument()
+  })
+
+  it('deletes an interview record from the advisor card', async () => {
+    const deleteInterview = vi.fn().mockResolvedValue(undefined)
+    const institutionWithInterview: Institution = {
+      ...institutionFixture,
+      advisors: [
+        {
+          ...advisorBase,
+          id: 'advisor-1',
+          email: 'zhang@example.com',
+          name: '张教授',
+          interviews: [
+            {
+              id: 'interview-1',
+              advisorId: 'advisor-1',
+              date: '2026-06-01T00:00:00.000Z',
+              format: 'ONLINE',
+              markdownNotes: '重复记录'
+            }
+          ]
+        }
+      ]
+    }
+    useStore.setState({ institutions: [institutionWithInterview], deleteInterview })
+
+    render(<InstitutionDetail institutionId="inst-1" onBack={() => undefined} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /导师预览/i }))
+    fireEvent.click(await screen.findByRole('button', { name: '删除 2026/06/01 面经' }))
+
+    await waitFor(() => {
+      expect(deleteInterview).toHaveBeenCalledWith('interview-1')
+    })
+  })
 })
