@@ -32,8 +32,9 @@ const statusOptions: Array<{ value: Advisor['contactStatus']; label: string }> =
 ]
 
 export default function AdvisorForm({ institutionId, advisor, onClose }: AdvisorFormProps): JSX.Element {
-  const { addAdvisor, updateAdvisor } = useStore()
+  const { institutions, addAdvisor, updateAdvisor } = useStore()
   const [formData, setFormData] = useState({
+    institutionId: advisor?.institutionId || institutionId,
     name: advisor?.name || '',
     title: advisor?.title || '',
     researchArea: advisor?.researchArea || '',
@@ -47,11 +48,11 @@ export default function AdvisorForm({ institutionId, advisor, onClose }: Advisor
 
   const handleSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault()
-    if (!formData.name.trim() || !formData.researchArea.trim() || !formData.email.trim()) return
+    if (!formData.institutionId || !formData.name.trim() || !formData.researchArea.trim() || !formData.email.trim()) return
     setIsSubmitting(true)
     try {
       const data = {
-        institutionId,
+        institutionId: formData.institutionId,
         name: formData.name.trim(),
         title: formData.title.trim() || null,
         researchArea: formData.researchArea.trim(),
@@ -77,6 +78,19 @@ export default function AdvisorForm({ institutionId, advisor, onClose }: Advisor
       <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{advisor ? '编辑导师' : '添加导师'}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label htmlFor="institutionId">所属院校 *</Label>
+            <Select value={formData.institutionId} onValueChange={(value) => setFormData((prev) => ({ ...prev, institutionId: value }))}>
+              <SelectTrigger id="institutionId"><SelectValue placeholder="选择院校" /></SelectTrigger>
+              <SelectContent>
+                {institutions.map((institution) => (
+                  <SelectItem key={institution.id} value={institution.id}>
+                    {institution.name} · {institution.department}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div>
             <Label htmlFor="name">姓名 *</Label>
             <Input id="name" value={formData.name} onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))} placeholder="如：张教授" required />
