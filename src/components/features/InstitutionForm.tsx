@@ -14,7 +14,7 @@ import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '../ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
-import { Tier, DegreeType, ApplicationStatus, applicationStatusOptions, tierDescriptions, degreeTypeLabels } from '../../lib/constants'
+import { Tier, DegreeType, ApplicationStatus, applicationStatusOptions, tierDescriptions, degreeTypeLabels, normalizeApplicationStatus } from '../../lib/constants'
 import { parsePolicyTags } from '../../lib/utils'
 
 interface InstitutionFormProps {
@@ -32,7 +32,7 @@ export default function InstitutionForm({ institution, onClose, onSuccess }: Ins
         department: institution.department,
         tier: institution.tier,
         degreeType: institution.degreeType,
-        applicationStatus: institution.applicationStatus || 'WATCHING',
+        applicationStatus: normalizeApplicationStatus(institution.applicationStatus),
         campDeadline: institution.campDeadline || '',
         pushDeadline: institution.pushDeadline || '',
         expectedQuota: institution.expectedQuota != null ? institution.expectedQuota : undefined,

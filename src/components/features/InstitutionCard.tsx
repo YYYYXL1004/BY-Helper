@@ -11,7 +11,7 @@ import { Calendar, AlertCircle, Edit2, Mail, Users } from 'lucide-react'
 import { Institution } from '../../stores/appStore'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
-import { applicationStatusBadge, applicationStatusLabels, tierColors, tierLabels, degreeTypeLabels, type ApplicationStatus } from '../../lib/constants'
+import { applicationStatusBadge, applicationStatusLabels, normalizeApplicationStatus, tierColors, tierLabels, degreeTypeLabels } from '../../lib/constants'
 import { parsePolicyTags, parseValidDate, formatDateSafe } from '../../lib/utils'
 
 interface InstitutionCardProps {
@@ -41,7 +41,7 @@ export default function InstitutionCard({ institution, dragHandle, onClick, onEd
 
   const deadlineStatus = getDeadlineStatus()
   const policyTags = parsePolicyTags(institution.policyTags)
-  const applicationStatus = (institution.applicationStatus || 'WATCHING') as ApplicationStatus
+  const applicationStatus = normalizeApplicationStatus(institution.applicationStatus)
 
   return (
     <div

@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../ui/dropdown-menu'
 import { ConfirmDialog } from '../ui/confirm-dialog'
-import { applicationStatusBadge, applicationStatusLabels, applicationStatusOptions, contactRecordTypeLabels, contactRecordTypeOptions, tierColors, tierLabels, degreeTypeLabels, advisorStatusConfig, type ApplicationStatus, type ContactRecordType } from '../../lib/constants'
+import { applicationStatusBadge, applicationStatusLabels, applicationStatusOptions, contactRecordTypeLabels, contactRecordTypeOptions, normalizeApplicationStatus, tierColors, tierLabels, degreeTypeLabels, advisorStatusConfig, type ApplicationStatus, type ContactRecordType } from '../../lib/constants'
 import { parsePolicyTags, formatDateSafe } from '../../lib/utils'
 import AdvisorForm from './AdvisorForm'
 import TaskForm from './TaskForm'
@@ -156,7 +156,7 @@ export default function InstitutionDetail({ institutionId, onBack, targetAdvisor
 
   const policyTags = parsePolicyTags(institution.policyTags)
   const advisorPreviewCount = institution.advisors?.length ?? 0
-  const applicationStatus = (institution.applicationStatus || 'WATCHING') as ApplicationStatus
+  const applicationStatus = normalizeApplicationStatus(institution.applicationStatus)
   const canReorderAdvisors = (institution.advisors?.length ?? 0) > 1
 
   // 构建删除确认描述
